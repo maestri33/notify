@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Notify — Home{% endblock %}
+{% block content %}
+<h2>Últimas notificações</h2>
+<p><small>
+  Auto-refresh a cada 5s ·
+  <a href="/logs">ver tudo com filtros</a>
+</small></p>
+
+<article>
+  <table class="compact striped"
+         hx-get="/partials/recent-logs"
+         hx-trigger="load, every 5s"
+         hx-target="#recent-body"
+         hx-swap="innerHTML">
+    <thead>
+      <tr>
+        <th>Quando</th>
+        <th>Canal</th>
+        <th>Status</th>
+        <th>#</th>
+        <th>Recipient</th>
+        <th>Provider ID</th>
+        <th>Erro</th>
+      </tr>
+    </thead>
+    <tbody id="recent-body">
+      <tr><td colspan="7"><em>Carregando…</em></td></tr>
+    </tbody>
+  </table>
+</article>
+{% endblock %}

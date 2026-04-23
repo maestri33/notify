@@ -1,0 +1,13 @@
+{% for n in logs %}
+<tr>
+  <td><small>{{ n.created_at.strftime('%d/%m %H:%M:%S') }}</small></td>
+  <td><code>{{ n.channel.value }}</code></td>
+  <td><span class="badge {{ n.status.value }}">{{ n.status.value }}</span></td>
+  <td>{{ n.attempts }}</td>
+  <td><small>{{ (recipient_labels.get(n.recipient_id) or '—')|truncate(40) }}</small></td>
+  <td><small>{{ (n.provider_msg_id or '')|truncate(20) }}</small></td>
+  <td><small>{{ (n.error_msg or '')|truncate(60) }}</small></td>
+</tr>
+{% else %}
+<tr><td colspan="7"><em>Nenhuma notificação.</em></td></tr>
+{% endfor %}

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Recipients{% endblock %}
+{% block content %}
+<h2>Recipients</h2>
+
+<article>
+  <header><strong>Buscar</strong></header>
+  <form hx-get="/partials/recipients" hx-target="#recipients-body" hx-swap="innerHTML" hx-trigger="load, submit, change delay:300ms">
+    <label>external_id contém
+      <input type="text" name="external_id" placeholder="uuid ou trecho">
+    </label>
+  </form>
+</article>
+
+<article>
+  <table class="compact striped">
+    <thead>
+      <tr>
+        <th>external_id</th><th>email</th><th>sms</th>
+        <th>whatsapp</th><th>válido?</th><th>atualizado</th><th></th>
+      </tr>
+    </thead>
+    <tbody id="recipients-body">
+      <tr><td colspan="7"><em>Carregando…</em></td></tr>
+    </tbody>
+  </table>
+</article>
+
+<article id="edit-panel">
+  {# populated by edit actions #}
+</article>
+{% endblock %}

@@ -1,0 +1,18 @@
+<header><strong>Editar recipient</strong> — <code>{{ r.external_id }}</code></header>
+<form hx-post="/recipients/{{ r.id }}/edit"
+      hx-target="#edit-panel" hx-swap="innerHTML">
+  <label>Email <input type="email" name="email" value="{{ r.email or '' }}"></label>
+  <label>Telefone (SMS + WhatsApp)
+    <input type="text" name="phone"
+           value="{{ (r.whatsapp_jid or r.phone_sms or '')|replace('@s.whatsapp.net','') }}"
+           placeholder="5543996648750">
+    <small>Aceita qualquer formato. Normalizado para SMS e WhatsApp automaticamente. Mudar o número revalida via Baileys.</small>
+  </label>
+  <div class="grid">
+    <button type="submit">Salvar</button>
+    <button type="button" class="secondary outline"
+            hx-get="/recipients/empty"
+            hx-target="#edit-panel" hx-swap="innerHTML">Cancelar</button>
+  </div>
+  {% if saved %}<p><small>✅ salvo às {{ now }}</small></p>{% endif %}
+</form>

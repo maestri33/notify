@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Baileys (WhatsApp){% endblock %}
+{% block content %}
+<h2>Baileys — sessão WhatsApp</h2>
+
+<article id="baileys-status"
+         hx-get="/partials/baileys-status"
+         hx-trigger="load, every 3s"
+         hx-swap="innerHTML">
+  <em>Carregando status…</em>
+</article>
+
+<article>
+  <header><strong>Logs recentes</strong></header>
+  <pre class="logs"
+       hx-get="/partials/baileys-logs"
+       hx-trigger="load, every 5s"
+       hx-swap="innerHTML">carregando…</pre>
+</article>
+{% endblock %}

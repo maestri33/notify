@@ -1,0 +1,28 @@
+<header>
+  <span class="status-dot {{ state }}"></span>
+  <strong>{{ state|upper }}</strong>
+  {% if jid %}— <code>{{ jid }}</code>{% endif %}
+  {% if device_name %}<small>({{ device_name }})</small>{% endif %}
+</header>
+
+{% if state == 'qr_pending' %}
+  <p>Escaneie o QR code no WhatsApp (Configurações → Dispositivos conectados):</p>
+  <img src="/partials/baileys-qr?t={{ cachebust }}" alt="QR" style="width:320px;height:320px;border:1px solid #ddd;border-radius:8px;">
+{% elif state == 'connected' %}
+  <p>✅ conectado · última atividade: <small>{{ last_seen or '—' }}</small></p>
+  <div class="grid">
+    <button class="secondary outline" hx-post="/partials/baileys-restart"
+            hx-confirm="Reiniciar conexão?" hx-target="#baileys-status" hx-swap="innerHTML">Reconectar</button>
+    <button class="secondary outline" hx-post="/partials/baileys-logout"
+            hx-confirm="Desconectar e apagar sessão? Será necessário escanear QR novamente."
+            hx-target="#baileys-status" hx-swap="innerHTML">Desconectar</button>
+  </div>
+{% elif state == 'connecting' %}
+  <p>⏳ conectando…</p>
+{% elif state == 'disconnected' %}
+  <p>⚠️ desconectado</p>
+  <button class="outline" hx-post="/partials/baileys-restart"
+          hx-target="#baileys-status" hx-swap="innerHTML">Tentar reconectar</button>
+{% elif state == 'unreachable' %}
+  <p>❌ sidecar Baileys não está acessível ({{ error or 'sem detalhes' }})</p>
+{% endif %}

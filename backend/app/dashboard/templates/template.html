@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Email Template{% endblock %}
+{% block content %}
+<h2>Template de Email</h2>
+<p><small>Jinja2. Variáveis disponíveis: <code>{{ '{{ content_html | safe }}' }}</code> e <code>{{ '{{ subject }}' }}</code>.</small></p>
+
+<form method="post" action="/template">
+  <label>Subject
+    <input type="text" name="subject" value="{{ tpl.subject }}" required>
+  </label>
+  <label>HTML body
+    <textarea name="html_body" rows="18" required style="font-family: ui-monospace, Menlo, monospace; font-size:0.85rem;">{{ tpl.html_body }}</textarea>
+  </label>
+  <div class="grid">
+    <button type="submit">Salvar</button>
+    <button type="button" class="secondary outline"
+            hx-post="/template/preview"
+            hx-include="closest form"
+            hx-target="#preview-frame"
+            hx-swap="innerHTML">Preview</button>
+  </div>
+  {% if saved %}<p><small>✅ salvo às {{ now }}</small></p>{% endif %}
+</form>
+
+<article>
+  <header><strong>Preview</strong> — conteúdo de exemplo:
+    <em>"Olá **fulano**, sua consulta foi confirmada para amanhã às 14h."</em>
+  </header>
+  <div id="preview-frame" style="border:1px solid var(--pico-muted-border-color); padding:0;">
+    <iframe id="preview-iframe" srcdoc="{{ preview_html }}" style="width:100%;height:520px;border:0;"></iframe>
+  </div>
+</article>
+{% endblock %}

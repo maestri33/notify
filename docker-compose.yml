@@ -1,0 +1,88 @@
+x-backend-base: &backend-base
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  image: notify-backend:local
+  env_file: .env
+  restart: unless-stopped
+  volumes:
+    - app-data:/app/data
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *backend-base
+    environment:
+      RUN_MIGRATIONS: "1"
+      NOTIFY_URL: "http://localhost:8000"
+    ports:
+      - "127.0.0.1:8001:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  worker-whatsapp:
+    <<: *backend-base
+    command: rq worker whatsapp --url ${REDIS_URL}
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  worker-sms:
+    <<: *backend-base
+    command: rq worker sms --url ${REDIS_URL}
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  worker-email:
+    <<: *backend-base
+    command: rq worker email --url ${REDIS_URL}
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  baileys:
+    build:
+      context: ./baileys-sidecar
+    image: notify-baileys:local
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      AUTH_DIR: /data/auth
+    volumes:
+      - baileys-auth:/data/auth
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  redis-data:
+  app-data:
+  baileys-auth:

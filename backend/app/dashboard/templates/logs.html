@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Logs{% endblock %}
+{% block content %}
+<h2>Logs de notificação</h2>
+
+<article>
+  <form hx-get="/partials/logs" hx-target="#logs-body" hx-swap="innerHTML"
+        hx-trigger="load, submit, change delay:300ms">
+    <div class="grid">
+      <label>Canal
+        <select name="channel">
+          <option value="">— todos —</option>
+          <option value="whatsapp">whatsapp</option>
+          <option value="sms">sms</option>
+          <option value="email">email</option>
+        </select>
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="">— todos —</option>
+          <option value="queued">queued</option>
+          <option value="sending">sending</option>
+          <option value="sent">sent</option>
+          <option value="failed">failed</option>
+        </select>
+      </label>
+      <label>external_id
+        <input type="text" name="external_id" placeholder="uuid">
+      </label>
+    </div>
+  </form>
+</article>
+
+<article>
+  <table class="compact striped">
+    <thead>
+      <tr>
+        <th>Quando</th><th>Canal</th><th>Status</th><th>#</th>
+        <th>Recipient</th><th>Provider ID</th><th>Erro</th>
+      </tr>
+    </thead>
+    <tbody id="logs-body">
+      <tr><td colspan="7"><em>Aplicando filtros…</em></td></tr>
+    </tbody>
+  </table>
+</article>
+{% endblock %}

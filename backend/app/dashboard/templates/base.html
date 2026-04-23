@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Notify{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <style>
+    :root { --pico-font-size: 95%; }
+    body > main { padding-top: 1rem; }
+    nav.top { border-bottom: 1px solid var(--pico-muted-border-color); margin-bottom: 1rem; }
+    nav.top ul { padding: 0.5rem 0; }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:0.75rem; font-weight:600; }
+    .badge.queued  { background:#fef3c7; color:#92400e; }
+    .badge.sending { background:#dbeafe; color:#1e40af; }
+    .badge.sent    { background:#d1fae5; color:#065f46; }
+    .badge.failed  { background:#fee2e2; color:#991b1b; }
+    .status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:middle; }
+    .status-dot.connected    { background:#10b981; }
+    .status-dot.disconnected { background:#ef4444; }
+    .status-dot.connecting, .status-dot.qr_pending { background:#f59e0b; }
+    table.compact td, table.compact th { padding: 6px 8px; font-size: 0.9rem; }
+    pre.logs { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:6px; max-height:320px; overflow:auto; font-size:0.8rem; }
+    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+    .toast { position:fixed; bottom:1rem; right:1rem; padding:0.75rem 1rem; border-radius:6px; background:#111827; color:#fff; }
+  </style>
+</head>
+<body>
+  <nav class="top container-fluid">
+    <ul>
+      <li><strong>📨 Notify</strong></li>
+    </ul>
+    <ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="/recipients">Recipients</a></li>
+      <li><a href="/logs">Logs</a></li>
+      <li><a href="/template">Template</a></li>
+      <li><a href="/config">Config</a></li>
+      <li><a href="/baileys">Baileys</a></li>
+    </ul>
+  </nav>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

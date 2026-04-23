@@ -1,0 +1,14 @@
+.env
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.db-wal
+*.db-shm
+.venv/
+data/
+backups/
+notify-qr.png
+node_modules/
+*.log

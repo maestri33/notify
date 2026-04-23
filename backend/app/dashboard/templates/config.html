@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Configuração de serviços{% endblock %}
+{% block content %}
+<h2>Configuração de serviços</h2>
+<p><small>Credenciais são salvas no banco e usadas pelos workers em runtime.</small></p>
+
+<form method="post" action="/config">
+  <article>
+    <header><strong>SMTP (Email)</strong></header>
+    <div class="grid">
+      <label>Host <input name="smtp_host" value="{{ cfg.smtp_host or '' }}" placeholder="smtp.gmail.com"></label>
+      <label>Port <input name="smtp_port" type="number" value="{{ cfg.smtp_port }}"></label>
+    </div>
+    <div class="grid">
+      <label>User <input name="smtp_user" value="{{ cfg.smtp_user or '' }}"></label>
+      <label>Pass <input name="smtp_pass" type="password" value="{{ cfg.smtp_pass or '' }}"></label>
+    </div>
+    <div class="grid">
+      <label>From email <input name="smtp_from_email" value="{{ cfg.smtp_from_email or '' }}" placeholder="notify@seudominio.com"></label>
+      <label>From name <input name="smtp_from_name" value="{{ cfg.smtp_from_name or '' }}"></label>
+    </div>
+    <label><input type="checkbox" name="smtp_use_tls" {% if cfg.smtp_use_tls %}checked{% endif %}> Usar STARTTLS (porta 587) / SSL auto (porta 465)</label>
+    <button type="button" class="outline secondary" hx-post="/config/test/smtp" hx-include="closest form" hx-target="#smtp-test" hx-swap="innerHTML">Testar conexão SMTP</button>
+    <span id="smtp-test"></span>
+  </article>
+
+  <article>
+    <header><strong>SMS Gateway for Android</strong></header>
+    <div class="grid">
+      <label>URL <input name="sms_gateway_url" value="{{ cfg.sms_gateway_url or '' }}" placeholder="http://192.168.1.50:8080"></label>
+      <label>User <input name="sms_gateway_user" value="{{ cfg.sms_gateway_user or '' }}"></label>
+      <label>Pass <input name="sms_gateway_pass" type="password" value="{{ cfg.sms_gateway_pass or '' }}"></label>
+    </div>
+    <div class="grid">
+      <label>Device ID <input name="sms_gateway_device_id" value="{{ cfg.sms_gateway_device_id or '' }}" placeholder="ffffffff..."></label>
+      <label>SIM number <input name="sms_sim_number" type="number" min="1" max="2" value="{{ cfg.sms_sim_number }}"></label>
+    </div>
+    <button type="button" class="outline secondary" hx-post="/config/test/sms" hx-include="closest form" hx-target="#sms-test" hx-swap="innerHTML">Testar conexão SMS Gateway</button>
+    <span id="sms-test"></span>
+  </article>
+
+  <article>
+    <header><strong>ElevenLabs (TTS)</strong></header>
+    <label>API key <input name="elevenlabs_api_key" type="password" value="{{ cfg.elevenlabs_api_key or '' }}"></label>
+    <div class="grid">
+      <label>Voice ID <input name="elevenlabs_voice_id" value="{{ cfg.elevenlabs_voice_id or '' }}"></label>
+      <label>Model ID <input name="elevenlabs_model_id" value="{{ cfg.elevenlabs_model_id }}"></label>
+    </div>
+    <button type="button" class="outline secondary" hx-post="/config/test/elevenlabs" hx-include="closest form" hx-target="#el-test" hx-swap="innerHTML">Testar ElevenLabs</button>
+    <span id="el-test"></span>
+  </article>
+
+  <article>
+    <header><strong>IMAP</strong> <small>(reservado — v1 não usa)</small></header>
+    <div class="grid">
+      <label>Host <input name="imap_host" value="{{ cfg.imap_host or '' }}"></label>
+      <label>Port <input name="imap_port" type="number" value="{{ cfg.imap_port }}"></label>
+    </div>
+    <div class="grid">
+      <label>User <input name="imap_user" value="{{ cfg.imap_user or '' }}"></label>
+      <label>Pass <input name="imap_pass" type="password" value="{{ cfg.imap_pass or '' }}"></label>
+    </div>
+  </article>
+
+  <button type="submit">Salvar configuração</button>
+  {% if saved %}<small style="margin-left:1rem;">✅ salvo às {{ now }}</small>{% endif %}
+</form>
+{% endblock %}

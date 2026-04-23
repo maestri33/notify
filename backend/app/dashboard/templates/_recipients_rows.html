@@ -1,0 +1,21 @@
+{% for r in recipients %}
+<tr>
+  <td><small>{{ r.external_id|truncate(30) }}</small></td>
+  <td><small>{{ r.email or '—' }}</small></td>
+  <td><small>{{ r.phone_sms or '—' }}</small></td>
+  <td><small>{{ (r.whatsapp_jid or '—')|replace('@s.whatsapp.net','') }}</small></td>
+  <td>{% if r.whatsapp_valid %}✅{% elif r.whatsapp_jid %}⚠️{% else %}—{% endif %}</td>
+  <td><small>{{ r.updated_at.strftime('%d/%m %H:%M') }}</small></td>
+  <td>
+    <button class="outline" style="padding:2px 8px;font-size:0.8rem;"
+            hx-get="/recipients/{{ r.id }}/edit"
+            hx-target="#edit-panel" hx-swap="innerHTML">editar</button>
+    <button class="secondary outline" style="padding:2px 8px;font-size:0.8rem;"
+            hx-delete="/recipients/{{ r.id }}"
+            hx-confirm="Remover recipient {{ r.external_id }}?"
+            hx-target="#recipients-body" hx-swap="innerHTML">×</button>
+  </td>
+</tr>
+{% else %}
+<tr><td colspan="7"><em>Nenhum recipient encontrado.</em></td></tr>
+{% endfor %}
