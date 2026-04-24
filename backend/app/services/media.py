@@ -46,5 +46,16 @@ def download(url: str) -> Media:
     )
 
 
-def download_all(urls: list[str]) -> list[Media]:
-    return [download(u) for u in urls]
+def download_all(urls: list[str]) -> tuple[list[Media], list[str]]:
+    """Download all URLs. Returns (succeeded, failed_urls).
+
+    Individual failures are swallowed so a single bad URL never blocks delivery.
+    """
+    ok: list[Media] = []
+    failed: list[str] = []
+    for u in urls:
+        try:
+            ok.append(download(u))
+        except Exception:
+            failed.append(u)
+    return ok, failed

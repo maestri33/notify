@@ -136,7 +136,7 @@ def send_email(
     first_line = md_to_plain(content).splitlines()[0] if content else "Notificação"
 
     # Download media once, split into inline images vs. regular attachments
-    medias = media_mod.download_all(media_urls) if media_urls else []
+    medias, failed_urls = media_mod.download_all(media_urls) if media_urls else ([], [])
     inline = [m for m in medias if m.mimetype.startswith("image/")]
     attachments = [m for m in medias if not m.mimetype.startswith("image/")]
 
@@ -150,6 +150,13 @@ def send_email(
                 f'style="max-width:100%;margin-top:12px;border-radius:6px;"/>'
             )
         content_html = content_html + "\n<div>" + "\n".join(gallery) + "</div>\n"
+
+    # URLs that couldn't be downloaded: include as clickable links in body
+    if failed_urls:
+        links = "\n".join(
+            f'<p><a href="{u}" style="color:#4f8ef7;">{u}</a></p>' for u in failed_urls
+        )
+        content_html = content_html + f"\n<div>{links}</div>\n"
 
     subject = _jinja.from_string(tpl.subject).render(
         content_html=content_html, subject=first_line
