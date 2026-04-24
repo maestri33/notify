@@ -80,6 +80,36 @@ def _json(obj) -> None:
     console.print_json(json.dumps(obj))
 
 
+def _render_qr_in_terminal(png_bytes: bytes) -> None:
+    """Render a PNG QR code in terminal using block characters."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+    except Exception as e:
+        rprint(f"[red]Unable to render QR in terminal:[/red] {e}")
+        raise typer.Exit(1) from e
+
+    img = Image.open(BytesIO(png_bytes)).convert("L")
+    # Keep nearest-neighbor scaling and make modules easier to scan.
+    scale = 2
+    img = img.resize((img.width * scale, img.height * scale), Image.NEAREST)
+
+    # Convert to strict black/white using a fixed threshold.
+    bw = img.point(lambda p: 0 if p < 128 else 255, mode="1")
+    pixels = bw.load()
+
+    # Add a quiet zone around QR in terminal.
+    horizontal_margin = " " * 4
+    print()
+    for y in range(bw.height):
+        row = []
+        for x in range(bw.width):
+            row.append("██" if pixels[x, y] == 0 else "  ")
+        print(f"{horizontal_margin}{''.join(row)}")
+    print()
+
+
 # ── recipients ───────────────────────────────────────────────────────────────
 
 recipients_app = typer.Typer(help="Manage recipients", no_args_is_help=True)
@@ -315,8 +345,13 @@ def whatsapp_status():
 @whatsapp_app.command("qr")
 def whatsapp_qr(
     save: Optional[str] = typer.Option(None, "--save", "-o", help="Save QR PNG to file"),
+    terminal: bool = typer.Option(
+        True,
+        "--terminal/--no-terminal",
+        help="Render QR directly in terminal.",
+    ),
 ):
-    """Show WhatsApp QR code for pairing. Saves PNG to --save path or prints URL."""
+    """Show WhatsApp QR code for pairing."""
     url = _api("/whatsapp/qr")
     r = httpx.get(url, timeout=10)
     if r.status_code == 404:
@@ -326,10 +361,14 @@ def whatsapp_qr(
         rprint("[red]Baileys sidecar unreachable.[/red]")
         raise typer.Exit(1)
 
-    path = save or "notify-qr.png"
-    with open(path, "wb") as f:
-        f.write(r.content)
-    rprint(f"[green]QR saved to {path}[/green] — open with any image viewer to scan.")
+    if terminal:
+        _render_qr_in_terminal(r.content)
+        rprint("[green]QR rendered in terminal.[/green]")
+
+    if save:
+        with open(save, "wb") as f:
+            f.write(r.content)
+        rprint(f"[green]QR saved to {save}[/green] — open with any image viewer to scan.")
 
 
 @whatsapp_app.command("logout")
