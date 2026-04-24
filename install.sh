@@ -14,15 +14,15 @@
 #   4. Installs the Baileys Node.js sidecar at /opt/notify/baileys-sidecar
 #   5. Writes /etc/notify.env with sensible defaults
 #   6. Runs Alembic migrations
-#   7. Creates and enables 6 systemd services:
+#   7. Creates and enables 5 systemd services:
 #        notify-api, notify-worker-whatsapp, notify-worker-sms,
-#        notify-worker-email, notify-baileys, (redis via apt)
+#        notify-worker-email, notify-baileys  (+ redis via apt)
 #
 # After install:
 #   - Dashboard:   http://<host>:8000
 #   - Baileys QR:  http://<host>:8000/baileys
 #   - Config:      http://<host>:8000/config
-#   - CLI:         notify --help  (runs as root or sudo -u notify)
+#   - CLI:         notify --help
 # =============================================================================
 
 set -euo pipefail
@@ -37,11 +37,22 @@ API_PORT="8000"
 BAILEYS_PORT="3000"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
-info()    { echo -e "${GREEN}[notify]${NC} $*"; }
-warn()    { echo -e "${YELLOW}[warn]${NC}  $*"; }
-die()     { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
+info() { echo -e "${GREEN}[notify]${NC} $*"; }
+warn() { echo -e "${YELLOW}[warn]${NC}  $*"; }
+die()  { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
 [[ $EUID -ne 0 ]] && die "Run as root (sudo bash install.sh)"
+
+# When already root (container), sudo -u still works if the user exists;
+# fall back to just switching via su if sudo is unavailable.
+_as() {
+    local user="$1"; shift
+    if command -v sudo &>/dev/null; then
+        sudo -u "$user" "$@"
+    else
+        su - "$user" -s /bin/bash -c "$(printf '%q ' "$@")"
+    fi
+}
 
 # ── 1. system packages ────────────────────────────────────────────────────────
 info "Installing system packages..."
@@ -58,7 +69,7 @@ apt-get install -y -qq \
 # Node 20 via NodeSource
 if ! command -v node &>/dev/null || [[ $(node -v | cut -d. -f1 | tr -d 'v') -lt 20 ]]; then
     info "Installing Node.js 20..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - -qq
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt-get install -y -qq nodejs
 fi
 
@@ -67,43 +78,45 @@ info "Node $(node -v) | Python $(python3.12 --version) | Redis $(redis-server --
 # ── 2. notify user + dirs ─────────────────────────────────────────────────────
 info "Creating user and directories..."
 id "$NOTIFY_USER" &>/dev/null || useradd --system --shell /bin/bash --home "$NOTIFY_HOME" "$NOTIFY_USER"
-mkdir -p "$NOTIFY_DATA/auth" "$NOTIFY_DATA/backups"
-chown -R "$NOTIFY_USER:$NOTIFY_USER" "$NOTIFY_DATA"
+mkdir -p "$NOTIFY_DATA/auth" "$NOTIFY_DATA/backups" "$NOTIFY_HOME"
+chown -R "$NOTIFY_USER:$NOTIFY_USER" "$NOTIFY_DATA" "$NOTIFY_HOME"
 
 # ── 3. clone or update repo ───────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+git config --global --add safe.directory "$NOTIFY_HOME" 2>/dev/null || true
+
 if [[ -d "$NOTIFY_HOME/.git" ]]; then
     info "Updating existing repo at $NOTIFY_HOME..."
-    sudo -u "$NOTIFY_USER" git -C "$NOTIFY_HOME" pull --ff-only
+    git -C "$NOTIFY_HOME" pull --ff-only
+elif [[ -f "$SCRIPT_DIR/pyproject.toml" && "$SCRIPT_DIR" != "$NOTIFY_HOME" ]]; then
+    info "Detected local clone at $SCRIPT_DIR — copying to $NOTIFY_HOME..."
+    cp -a "$SCRIPT_DIR/." "$NOTIFY_HOME/"
+    rm -rf "$NOTIFY_HOME/.venv" "$NOTIFY_HOME/data" "$NOTIFY_HOME/backups" \
+           "$NOTIFY_HOME/.env"
+    find "$NOTIFY_HOME" -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
 else
-    info "Cloning repo to $NOTIFY_HOME..."
-    # If we're already running from inside the cloned dir, copy instead
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    if [[ -f "$SCRIPT_DIR/pyproject.toml" ]]; then
-        info "Detected local clone at $SCRIPT_DIR — copying..."
-        rsync -a --exclude='.venv' --exclude='__pycache__' --exclude='*.pyc' \
-              --exclude='data/' --exclude='backups/' --exclude='.env' \
-              "$SCRIPT_DIR/" "$NOTIFY_HOME/"
-        chown -R "$NOTIFY_USER:$NOTIFY_USER" "$NOTIFY_HOME"
-    else
-        git clone "$REPO_URL" "$NOTIFY_HOME"
-        chown -R "$NOTIFY_USER:$NOTIFY_USER" "$NOTIFY_HOME"
-    fi
+    info "Cloning from $REPO_URL..."
+    git clone "$REPO_URL" "$NOTIFY_HOME"
 fi
+chown -R "$NOTIFY_USER:$NOTIFY_USER" "$NOTIFY_HOME"
 
 # ── 4. python virtualenv + package ───────────────────────────────────────────
 info "Installing Python package..."
-sudo -u "$NOTIFY_USER" python3.12 -m venv "$VENV"
-sudo -u "$NOTIFY_USER" "$VENV/bin/pip" install -q --upgrade pip
-sudo -u "$NOTIFY_USER" "$VENV/bin/pip" install -q "$NOTIFY_HOME"
+python3.12 -m venv "$VENV"
+"$VENV/bin/pip" install -q --upgrade pip
+"$VENV/bin/pip" install -q "$NOTIFY_HOME"
+chown -R "$NOTIFY_USER:$NOTIFY_USER" "$VENV"
 
 # symlink CLI to system path
 ln -sf "$VENV/bin/notify" /usr/local/bin/notify
-info "CLI available: $(notify --help | head -1)"
+info "CLI installed → $(notify --version 2>/dev/null || echo ok)"
 
 # ── 5. baileys sidecar ────────────────────────────────────────────────────────
 info "Installing Baileys sidecar..."
 cd "$NOTIFY_HOME/baileys-sidecar"
-sudo -u "$NOTIFY_USER" npm install --omit=dev --no-audit --no-fund --silent
+npm install --omit=dev --no-audit --no-fund --silent
+chown -R "$NOTIFY_USER:$NOTIFY_USER" "$NOTIFY_HOME/baileys-sidecar/node_modules"
 cd "$NOTIFY_HOME"
 
 # ── 6. env file ──────────────────────────────────────────────────────────────
@@ -121,46 +134,45 @@ NOTIFY_URL=http://localhost:$API_PORT
 EOF
     chmod 640 "$ENV_FILE"
     chown root:"$NOTIFY_USER" "$ENV_FILE"
-    info "Created $ENV_FILE — review and adjust if needed."
+    info "Created $ENV_FILE"
 else
     warn "$ENV_FILE already exists — skipping (not overwritten)."
 fi
 
-# ── 7. redis config ───────────────────────────────────────────────────────────
+# ── 7. redis ──────────────────────────────────────────────────────────────────
 info "Configuring Redis..."
-sed -i 's/^# appendonly no/appendonly yes/' /etc/redis/redis.conf 2>/dev/null || true
-sed -i 's/^appendonly no/appendonly yes/' /etc/redis/redis.conf 2>/dev/null || true
-systemctl enable --now redis-server
+if [[ -f /etc/redis/redis.conf ]]; then
+    sed -i 's/^# appendonly no/appendonly yes/' /etc/redis/redis.conf || true
+    sed -i 's/^appendonly no/appendonly yes/'   /etc/redis/redis.conf || true
+fi
+systemctl enable --now redis-server 2>/dev/null || true
 
 # ── 8. alembic migrations ─────────────────────────────────────────────────────
 info "Running database migrations..."
-mkdir -p "$NOTIFY_DATA"
-chown "$NOTIFY_USER:$NOTIFY_USER" "$NOTIFY_DATA"
 cd "$NOTIFY_HOME/backend"
-sudo -u "$NOTIFY_USER" env \
-    DATABASE_URL="sqlite:///$NOTIFY_DATA/notify.db" \
-    REDIS_URL="redis://localhost:6379/0" \
-    BAILEYS_URL="http://localhost:$BAILEYS_PORT" \
+DATABASE_URL="sqlite:///$NOTIFY_DATA/notify.db" \
+REDIS_URL="redis://localhost:6379/0" \
+BAILEYS_URL="http://localhost:$BAILEYS_PORT" \
     "$VENV/bin/alembic" upgrade head
 cd "$NOTIFY_HOME"
 
 # ── 9. systemd services ───────────────────────────────────────────────────────
 info "Installing systemd services..."
 
-_service_backend() {
-    local name="$1" cmd="$2" desc="$3"
+_write_service() {
+    local name="$1" desc="$2" cmd="$3" wdir="$4"
     cat > "/etc/systemd/system/notify-${name}.service" <<EOF
 [Unit]
 Description=Notify — $desc
-After=network.target redis-server.service notify-baileys.service
+After=network.target redis-server.service
 Wants=redis-server.service
 
 [Service]
 Type=simple
 User=$NOTIFY_USER
-WorkingDirectory=$NOTIFY_HOME/backend
+WorkingDirectory=$wdir
 EnvironmentFile=$ENV_FILE
-ExecStart=$VENV/bin/$cmd
+ExecStart=$cmd
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -172,25 +184,28 @@ WantedBy=multi-user.target
 EOF
 }
 
-# API
-_service_backend "api" \
-    "uvicorn app.main:app --host 0.0.0.0 --port $API_PORT" \
-    "FastAPI + Dashboard"
+_write_service "api" \
+    "FastAPI + Dashboard" \
+    "$VENV/bin/uvicorn app.main:app --host 0.0.0.0 --port $API_PORT" \
+    "$NOTIFY_HOME/backend"
 
-# Workers
-_service_backend "worker-whatsapp" \
-    "rq worker whatsapp --url \${REDIS_URL}" \
-    "RQ worker (whatsapp)"
+_write_service "worker-whatsapp" \
+    "RQ worker (whatsapp)" \
+    "$VENV/bin/rq worker whatsapp --url \${REDIS_URL}" \
+    "$NOTIFY_HOME/backend"
 
-_service_backend "worker-sms" \
-    "rq worker sms --url \${REDIS_URL}" \
-    "RQ worker (sms)"
+_write_service "worker-sms" \
+    "RQ worker (sms)" \
+    "$VENV/bin/rq worker sms --url \${REDIS_URL}" \
+    "$NOTIFY_HOME/backend"
 
-_service_backend "worker-email" \
-    "rq worker email --url \${REDIS_URL}" \
-    "RQ worker (email)"
+_write_service "worker-email" \
+    "RQ worker (email)" \
+    "$VENV/bin/rq worker email --url \${REDIS_URL}" \
+    "$NOTIFY_HOME/backend"
 
-# Baileys sidecar
+# Baileys — no EnvironmentFile, uses its own env vars
+NODE_BIN="$(which node)"
 cat > "/etc/systemd/system/notify-baileys.service" <<EOF
 [Unit]
 Description=Notify — Baileys WhatsApp sidecar
@@ -202,7 +217,7 @@ User=$NOTIFY_USER
 WorkingDirectory=$NOTIFY_HOME/baileys-sidecar
 Environment=PORT=$BAILEYS_PORT
 Environment=AUTH_DIR=$NOTIFY_DATA/auth
-ExecStart=$(which node) index.js
+ExecStart=$NODE_BIN index.js
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -213,25 +228,32 @@ SyslogIdentifier=notify-baileys
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
+systemctl daemon-reload 2>/dev/null || true
 
+FAILED=()
 for svc in notify-baileys notify-api notify-worker-whatsapp notify-worker-sms notify-worker-email; do
-    systemctl enable --now "$svc"
-    info "  $svc → $(systemctl is-active $svc)"
+    if systemctl enable --now "$svc" 2>/dev/null; then
+        info "  ✅ $svc"
+    else
+        warn "  ⚠️  $svc — could not start (normal in containers; will start on boot)"
+        FAILED+=("$svc")
+    fi
 done
 
 # ── 10. firewall ──────────────────────────────────────────────────────────────
-if command -v ufw &>/dev/null; then
+if command -v ufw &>/dev/null && [[ -z "${SKIP_UFW:-}" ]]; then
     info "Configuring UFW..."
-    ufw --force reset -q
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow 22/tcp
-    ufw allow "$API_PORT/tcp"
-    ufw --force enable
-    warn "UFW enabled. Restrict port $API_PORT to your VPN subnet when ready:"
-    warn "  ufw delete allow $API_PORT/tcp"
-    warn "  ufw allow from <vpn-subnet> to any port $API_PORT"
+    if ufw --force reset 2>/dev/null && \
+       ufw default deny incoming 2>/dev/null && \
+       ufw default allow outgoing 2>/dev/null && \
+       ufw allow 22/tcp 2>/dev/null && \
+       ufw allow "$API_PORT/tcp" 2>/dev/null && \
+       ufw --force enable 2>/dev/null; then
+        warn "UFW active. Restrict port $API_PORT to your VPN subnet when ready:"
+        warn "  ufw delete allow $API_PORT/tcp && ufw allow from <vpn-subnet> to any port $API_PORT"
+    else
+        warn "UFW could not be configured (normal in containers — configure manually on the LXC)."
+    fi
 fi
 
 # ── done ──────────────────────────────────────────────────────────────────────
@@ -240,12 +262,18 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║  Notify installed successfully!              ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
 echo ""
-echo "  Dashboard  →  http://$(hostname -I | awk '{print $1}'):$API_PORT"
+HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || echo '<host>')"
+echo "  Dashboard  →  http://$HOST_IP:$API_PORT"
 echo "  CLI        →  notify --help"
 echo "  Logs       →  journalctl -u notify-api -f"
 echo ""
 echo "  Next steps:"
-echo "    1. Open the dashboard → /baileys and scan the WhatsApp QR"
-echo "    2. Open the dashboard → /config and fill in SMTP / SMS / ElevenLabs"
+echo "    1. Open /baileys in the dashboard and scan the WhatsApp QR"
+echo "    2. Open /config and fill in SMTP / SMS Gateway / ElevenLabs"
 echo "    3. Run: notify status"
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    echo ""
+    warn "Services not started (start manually after boot):"
+    for s in "${FAILED[@]}"; do warn "  systemctl start $s"; done
+fi
 echo ""
