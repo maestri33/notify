@@ -1,6 +1,6 @@
 # Notify
 
-Internal multi-channel notification service. Accepts a recipient UUID + markdown content and routes to WhatsApp / SMS / Email automatically based on what the recipient has registered.
+Internal multi-channel notification service. Accepts a recipient `external_id` + markdown content and routes to WhatsApp / SMS / Email automatically based on what the recipient has registered.
 
 Consumed by internal apps over a VPN. No authentication.
 
@@ -13,10 +13,6 @@ Consumed by internal apps over a VPN. No authentication.
 - **Email**: `aiosmtplib` (SMTP configured in dashboard)
 - **TTS**: ElevenLabs (WhatsApp voice notes)
 
-## Status
-
-🚧 Under active development — see [specs/](specs/) for spec-driven design docs.
-
 ## Quick start
 
 ```bash
@@ -27,6 +23,14 @@ docker compose up -d
 
 First run: go to `/baileys` to scan the WhatsApp QR code, then `/config` to fill in SMTP, SMS Gateway, and ElevenLabs credentials.
 
+If you prefer CLI pairing, run:
+
+```bash
+docker compose exec api notify whatsapp qr
+```
+
+This renders the WhatsApp pairing QR directly in the terminal (you can still save PNG with `--save`).
+
 ## Helper scripts
 
 - `./scripts/send-test.sh <recipient_id> "msg"` — fire a test notification
@@ -36,6 +40,4 @@ First run: go to `/baileys` to scan the WhatsApp QR code, then `/config` to fill
 ## Docs
 
 - [deploy.md](docs/deploy.md) — LXC on Proxmox deploy guide
-- [spec.md](specs/spec.md) — entities, API, routing logic
-- [plan.md](specs/plan.md) — stack, architecture, sidecar contract
-- [tasks.md](specs/tasks.md) — implementation phases
+- [SKILL.md](SKILL.md) — operational guide for AI agents using Notify
