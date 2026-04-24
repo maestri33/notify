@@ -43,17 +43,6 @@ die()  { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
 
 [[ $EUID -ne 0 ]] && die "Run as root (sudo bash install.sh)"
 
-# When already root (container), sudo -u still works if the user exists;
-# fall back to just switching via su if sudo is unavailable.
-_as() {
-    local user="$1"; shift
-    if command -v sudo &>/dev/null; then
-        sudo -u "$user" "$@"
-    else
-        su - "$user" -s /bin/bash -c "$(printf '%q ' "$@")"
-    fi
-}
-
 # ── 1. system packages ────────────────────────────────────────────────────────
 info "Installing system packages..."
 apt-get update -qq
@@ -110,7 +99,12 @@ chown -R "$NOTIFY_USER:$NOTIFY_USER" "$VENV"
 
 # symlink CLI to system path
 ln -sf "$VENV/bin/notify" /usr/local/bin/notify
-info "CLI installed → $(notify --version 2>/dev/null || echo ok)"
+
+# make NOTIFY_URL available in every shell session
+echo "export NOTIFY_URL=http://localhost:$API_PORT" > /etc/profile.d/notify.sh
+chmod 644 /etc/profile.d/notify.sh
+
+info "CLI installed → $(NOTIFY_URL=http://localhost:$API_PORT notify --version 2>/dev/null || echo ok)"
 
 # ── 5. baileys sidecar ────────────────────────────────────────────────────────
 info "Installing Baileys sidecar..."
