@@ -213,6 +213,24 @@ def patch_recipient(
     return r
 
 
+@router.post("/{recipient_id}/revalidate", response_model=RecipientOut)
+def revalidate_recipient(
+    recipient_id: UUID,
+    session: Session = Depends(get_session),
+    baileys: BaileysClient = Depends(get_baileys),
+) -> Recipient:
+    """Force re-check of WhatsApp registration status via Baileys."""
+    r = session.get(Recipient, recipient_id)
+    if not r:
+        raise HTTPException(404, "recipient not found")
+    _validate_whatsapp(r, baileys)
+    r.updated_at = utcnow()
+    session.add(r)
+    session.commit()
+    session.refresh(r)
+    return r
+
+
 @router.delete("/{recipient_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_recipient(recipient_id: UUID, session: Session = Depends(get_session)) -> None:
     r = session.get(Recipient, recipient_id)

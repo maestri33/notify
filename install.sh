@@ -148,6 +148,8 @@ DATABASE_URL="sqlite:///$NOTIFY_DATA/notify.db" \
 REDIS_URL="redis://localhost:6379/0" \
 BAILEYS_URL="http://localhost:$BAILEYS_PORT" \
     "$VENV/bin/alembic" upgrade head
+# Ensure the notify user owns all data files (migrations run as root)
+chown -R "$NOTIFY_USER:$NOTIFY_USER" "$NOTIFY_DATA"
 cd "$NOTIFY_HOME"
 
 # ── 9. systemd services ───────────────────────────────────────────────────────

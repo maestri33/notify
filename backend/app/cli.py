@@ -188,6 +188,14 @@ def recipients_delete(
     rprint(f"[green]Deleted {recipient_id}[/green]")
 
 
+@recipients_app.command("revalidate")
+def recipients_revalidate(
+    recipient_id: str = typer.Argument(help="Recipient UUID"),
+):
+    """Force re-check of WhatsApp registration status."""
+    _json(_post(f"/recipients/{recipient_id}/revalidate", {}))
+
+
 @recipients_app.command("check")
 def recipients_check(
     query: str = typer.Argument(help="Phone number or email to check"),
