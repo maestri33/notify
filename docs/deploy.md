@@ -1,5 +1,57 @@
 # Deploy — LXC on Proxmox (Production Guide)
 
+Two deployment modes are supported. Choose one:
+
+| Mode | When to use |
+|------|-------------|
+| **Native (recommended)** | LXC is dedicated to Notify — no Docker overhead, services run directly via systemd |
+| **Docker Compose** | Shared host or you prefer containers |
+
+---
+
+## Native install (dedicated LXC)
+
+### TL;DR
+
+```bash
+# On a fresh Ubuntu 24.04 LXC:
+git clone https://github.com/maestri33/notify.git /opt/notify
+sudo bash /opt/notify/install.sh
+```
+
+The script installs Python 3.12, Node 20, Redis, Baileys, the Python package, runs migrations, and registers 5 systemd services. Done.
+
+### What gets installed
+
+| Component | Location |
+|-----------|----------|
+| Python package + CLI | `/opt/notify/.venv` |
+| Baileys sidecar | `/opt/notify/baileys-sidecar/node_modules` |
+| Database | `/var/lib/notify/notify.db` |
+| Baileys auth | `/var/lib/notify/auth/` |
+| Env file | `/etc/notify.env` |
+| Systemd services | `notify-api`, `notify-baileys`, `notify-worker-{whatsapp,sms,email}` |
+
+### Useful commands after install
+
+```bash
+notify status                          # health check
+journalctl -u notify-api -f            # API logs
+journalctl -u notify-worker-whatsapp   # worker logs
+systemctl restart notify-api           # restart after config change
+```
+
+### Updates
+
+```bash
+cd /opt/notify && git pull
+sudo bash install.sh   # re-runs: pip install, npm install, migrations, daemon-reload
+```
+
+---
+
+## Docker Compose install
+
 Target: a single LXC container on Proxmox running Docker + Compose. The stack is internal-only; the dashboard must never be exposed to the public internet. Access it exclusively over VPN.
 
 ---
