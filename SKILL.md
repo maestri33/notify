@@ -1,10 +1,10 @@
-# Notify — AI Agent Skill Reference
+# Notify — Skill para Agentes de IA
 
-Reference for an AI agent using the Notify CLI to send notifications and manage recipients.
+Guia operacional para agentes de IA utilizarem o Notify via CLI com segurança e previsibilidade.
 
 ---
 
-## Quick reference — how the CLI works
+## Uso rápido da CLI
 
 **Inside Docker (preferred):**
 ```bash
@@ -38,6 +38,11 @@ notify recipients list
 Update a recipient:
 ```bash
 notify recipients update <id> --phone <number>
+```
+
+Consultar recipient por ID:
+```bash
+notify recipients get <recipient_id>
 ```
 
 ---
@@ -77,15 +82,26 @@ notify notifications get <log_id>
 ```bash
 notify status            # overall application health
 notify whatsapp status   # WhatsApp connection state
+notify whatsapp qr       # renderiza QR no terminal para pareamento
+notify whatsapp qr --save notify-qr.png  # opcional: salvar PNG
 ```
 
 ---
 
-## Rules the agent must follow
+## Regras obrigatórias para o agente
 
-1. **Always `check` before `create`** — avoid creating duplicate recipients.
-2. **`external_id` is the unique key** — use the user's ID from the calling application, not an internal Notify ID.
-3. **`phone` handles both SMS and WhatsApp automatically** — one field covers both channels; do not create separate records for each.
-4. **`--tts` is multi-channel** — it sends an audio voice note to WhatsApp and plain text to SMS and email in the same call.
-5. **Media URLs must be publicly accessible** — no authentication, no signed URLs that expire in seconds.
-6. **Check WhatsApp status before TTS or WhatsApp sends** — if `notify whatsapp status` is not `connected`, those sends will fail immediately. Alert the operator rather than retrying silently.
+1. **Sempre rode `check` antes de `create`** para evitar duplicidade.
+2. **`external_id` é a chave de negócio** (não use ID interno do Notify para integração).
+3. **Use `phone` único** (o sistema normaliza para SMS + WhatsApp automaticamente).
+4. **`--tts` é multicanal** (áudio no WhatsApp, texto em SMS/Email na mesma requisição).
+5. **Mídias devem ser URL pública acessível** no momento do envio.
+6. **Verifique `notify whatsapp status` antes de envios WhatsApp/TTS**; se não estiver `connected`, avise o operador.
+
+## Checklist recomendado antes de enviar em produção
+
+```bash
+notify status
+notify whatsapp status
+notify recipients check <phone_or_email>
+notify notifications send <external_id> "mensagem de teste" --channel email
+```
