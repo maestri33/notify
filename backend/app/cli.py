@@ -30,7 +30,20 @@ console = Console()
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _base() -> str:
-    return os.environ.get("NOTIFY_URL", "http://localhost:8001").rstrip("/")
+    url = os.environ.get("NOTIFY_URL")
+    if not url:
+        # Fall back to /etc/notify.env so the CLI works out-of-the-box on the
+        # native LXC install without needing NOTIFY_URL exported in every shell.
+        try:
+            with open("/etc/notify.env") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line.startswith("NOTIFY_URL=") and not line.startswith("#"):
+                        url = line.split("=", 1)[1].strip()
+                        break
+        except OSError:
+            pass
+    return (url or "http://localhost:8000").rstrip("/")
 
 
 def _api(path: str) -> str:

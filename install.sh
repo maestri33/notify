@@ -100,11 +100,7 @@ chown -R "$NOTIFY_USER:$NOTIFY_USER" "$VENV"
 # symlink CLI to system path
 ln -sf "$VENV/bin/notify" /usr/local/bin/notify
 
-# make NOTIFY_URL available in every shell session
-echo "export NOTIFY_URL=http://localhost:$API_PORT" > /etc/profile.d/notify.sh
-chmod 644 /etc/profile.d/notify.sh
-
-info "CLI installed → $(NOTIFY_URL=http://localhost:$API_PORT notify --version 2>/dev/null || echo ok)"
+info "CLI installed → $(notify --version 2>/dev/null || echo ok)"
 
 # ── 5. baileys sidecar ────────────────────────────────────────────────────────
 info "Installing Baileys sidecar..."
