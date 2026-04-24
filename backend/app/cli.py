@@ -32,17 +32,25 @@ console = Console()
 def _base() -> str:
     url = os.environ.get("NOTIFY_URL")
     if not url:
-        # Fall back to /etc/notify.env so the CLI works out-of-the-box on the
-        # native LXC install without needing NOTIFY_URL exported in every shell.
-        try:
-            with open("/etc/notify.env") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if line.startswith("NOTIFY_URL=") and not line.startswith("#"):
-                        url = line.split("=", 1)[1].strip()
-                        break
-        except OSError:
-            pass
+        # Search config files in priority order:
+        #   1. ~/.notify.env  — local CLI install (user-level)
+        #   2. /etc/notify.env — native server install (system-level)
+        candidates = [
+            os.path.expanduser("~/.notify.env"),
+            "/etc/notify.env",
+        ]
+        for path in candidates:
+            try:
+                with open(path) as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line.startswith("NOTIFY_URL=") and not line.startswith("#"):
+                            url = line.split("=", 1)[1].strip()
+                            break
+            except OSError:
+                pass
+            if url:
+                break
     return (url or "http://localhost:8000").rstrip("/")
 
 
