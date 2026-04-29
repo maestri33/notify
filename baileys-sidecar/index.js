@@ -1,12 +1,13 @@
 import express from "express";
 import pino from "pino";
 import QRCode from "qrcode";
+import { WebSocketServer } from "ws";
+import { createServer } from "http";
 import {
   makeWASocket,
   DisconnectReason,
   fetchLatestBaileysVersion,
 } from "@whiskeysockets/baileys";
-import { rmSync, mkdirSync, existsSync } from "node:fs";
 import { useSqliteAuthState } from "./sqlite-auth-state.js";
 import {
   upsertContact,
@@ -54,12 +55,30 @@ const state = {
 let restartTimer = null;
 let authStateHandle = null;
 
+// ── WebSocket broadcast ────────────────────────────────────────────────────
+
+/** @type {Set<import("ws").WebSocket>} */
+const wsClients = new Set();
+
+function broadcast(data) {
+  const msg = JSON.stringify(data);
+  for (const ws of wsClients) {
+    if (ws.readyState === 1) {
+      try { ws.send(msg); } catch {}
+    }
+  }
+}
+
+// ── Socket start ───────────────────────────────────────────────────────────
+
 async function start() {
   authStateHandle = await useSqliteAuthState();
   const { state: authState, saveCreds } = authStateHandle;
   const { version } = await fetchLatestBaileysVersion();
 
   state.status = "connecting";
+  broadcast({ event: "connection.update", data: { status: "connecting" } });
+
   const sock = makeWASocket({
     version,
     auth: authState,
@@ -78,21 +97,23 @@ async function start() {
   sock.ev.on("creds.update", (update) => {
     Object.assign(authState.creds, update);
     saveCreds();
+    broadcast({ event: "creds.update", data: { me: authState.creds.me?.id } });
   });
 
-  // Store incoming messages in SQLite
+  // Incoming messages → SQLite + WebSocket push
   sock.ev.on("messages.upsert", ({ messages }) => {
+    const pushed = [];
     for (const msg of messages) {
-      try {
-        insertMessage(msg);
-      } catch {
-        // dedup or malformed — ignore
-      }
+      try { insertMessage(msg); pushed.push(msg); } catch {}
+    }
+    if (pushed.length) {
+      broadcast({ event: "messages.upsert", data: { messages: pushed } });
     }
   });
 
-  // Store contacts in SQLite
+  // Contacts → SQLite + WebSocket push
   sock.ev.on("contacts.update", (contacts) => {
+    const pushed = [];
     for (const c of contacts) {
       try {
         upsertContact(c.id, {
@@ -101,9 +122,11 @@ async function start() {
           verifiedName: c.verifiedName,
           isWhatsappUser: true,
         });
-      } catch {
-        // ignore
-      }
+        pushed.push(c);
+      } catch {}
+    }
+    if (pushed.length) {
+      broadcast({ event: "contacts.update", data: { contacts: pushed } });
     }
   });
 
@@ -112,6 +135,7 @@ async function start() {
     if (qr) {
       state.qr = qr;
       state.status = "qr_pending";
+      broadcast({ event: "connection.update", data: { status: "qr_pending" } });
       ringLogger.info("QR code updated");
     }
     if (connection === "open") {
@@ -121,6 +145,15 @@ async function start() {
       state.deviceName = sock.user?.name || null;
       state.lastSeen = new Date().toISOString();
       ringLogger.info({ jid: state.jid }, "connected");
+      broadcast({
+        event: "connection.update",
+        data: {
+          status: "connected",
+          jid: state.jid,
+          deviceName: state.deviceName,
+          lastSeen: state.lastSeen,
+        },
+      });
     }
     if (connection === "close") {
       const code = lastDisconnect?.error?.output?.statusCode;
@@ -128,6 +161,14 @@ async function start() {
       state.status = "disconnected";
       state.jid = null;
       ringLogger.warn({ code, shouldReconnect }, "connection closed");
+      broadcast({
+        event: "connection.update",
+        data: {
+          status: "disconnected",
+          code,
+          shouldReconnect,
+        },
+      });
       if (shouldReconnect) {
         clearTimeout(restartTimer);
         restartTimer = setTimeout(start, 2_000);
@@ -138,7 +179,8 @@ async function start() {
 
 start().catch((e) => ringLogger.error({ err: e.message }, "start failed"));
 
-// --- HTTP API ---
+// ── HTTP API ────────────────────────────────────────────────────────────────
+
 const app = express();
 app.use(express.json({ limit: "25mb" }));
 
@@ -261,7 +303,7 @@ app.post("/send/ptt", requireConnected, async (req, res) => {
   }
 });
 
-// ── New: Contacts API ──────────────────────────────────────────────────────
+// ── Contacts API ────────────────────────────────────────────────────────────
 
 app.get("/contacts", (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || "100", 10), 500);
@@ -278,7 +320,7 @@ app.get("/contacts/:jid", (req, res) => {
   res.json(c);
 });
 
-// ── New: Messages API ──────────────────────────────────────────────────────
+// ── Messages API ────────────────────────────────────────────────────────────
 
 app.get("/messages", (req, res) => {
   const jid = req.query.jid;
@@ -303,13 +345,11 @@ app.get("/messages/:id", (req, res) => {
   res.json(m);
 });
 
-// ── New: Sync contacts from WA ─────────────────────────────────────────────
+// ── Contacts sync ──────────────────────────────────────────────────────────
 
 app.post("/contacts/sync", requireConnected, async (req, res) => {
   try {
     const fetched = [];
-    // Baileys doesn't have a direct "getAllContacts", but we can
-    // fetch them via the contact query mechanism
     const contactJids = Object.keys(state.sock.contacts || {});
     for (const jid of contactJids) {
       const c = state.sock.contacts[jid];
@@ -327,6 +367,36 @@ app.post("/contacts/sync", requireConnected, async (req, res) => {
   }
 });
 
-app.listen(PORT, () =>
-  ringLogger.info({ port: PORT }, "baileys sidecar listening")
+// ── HTTP + WebSocket server ─────────────────────────────────────────────────
+
+const server = createServer(app);
+
+const wss = new WebSocketServer({ server, path: "/ws" });
+
+wss.on("connection", (ws) => {
+  wsClients.add(ws);
+  ringLogger.info("ws client connected, total=" + wsClients.size);
+
+  // Send current state immediately
+  ws.send(JSON.stringify({
+    event: "connection.update",
+    data: {
+      status: state.status,
+      jid: state.jid,
+      deviceName: state.deviceName,
+    },
+  }));
+
+  ws.on("close", () => {
+    wsClients.delete(ws);
+    ringLogger.info("ws client disconnected, total=" + wsClients.size);
+  });
+
+  ws.on("error", () => {
+    wsClients.delete(ws);
+  });
+});
+
+server.listen(PORT, () =>
+  ringLogger.info({ port: PORT }, "baileys sidecar listening (http+ws)")
 );
