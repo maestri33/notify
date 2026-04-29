@@ -3,14 +3,24 @@ import pino from "pino";
 import QRCode from "qrcode";
 import {
   makeWASocket,
-  useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
 } from "@whiskeysockets/baileys";
 import { rmSync, mkdirSync, existsSync } from "node:fs";
+import { useSqliteAuthState } from "./sqlite-auth-state.js";
+import {
+  upsertContact,
+  getContact,
+  listContacts,
+  searchContacts,
+  insertMessage,
+  getMessage,
+  listMessages,
+  recentMessages,
+  countMessages,
+} from "./db.js";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
-const AUTH_DIR = process.env.AUTH_DIR || "/data/auth";
 
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
@@ -42,11 +52,11 @@ const state = {
 };
 
 let restartTimer = null;
+let authStateHandle = null;
 
 async function start() {
-  if (!existsSync(AUTH_DIR)) mkdirSync(AUTH_DIR, { recursive: true });
-
-  const { state: authState, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  authStateHandle = await useSqliteAuthState();
+  const { state: authState, saveCreds } = authStateHandle;
   const { version } = await fetchLatestBaileysVersion();
 
   state.status = "connecting";
@@ -65,10 +75,37 @@ async function start() {
   });
   state.sock = sock;
 
-  sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("creds.update", (update) => {
+    Object.assign(authState.creds, update);
+    saveCreds();
+  });
 
-  // Consume messages.upsert to prevent internal buffer build-up
-  sock.ev.on("messages.upsert", () => {});
+  // Store incoming messages in SQLite
+  sock.ev.on("messages.upsert", ({ messages }) => {
+    for (const msg of messages) {
+      try {
+        insertMessage(msg);
+      } catch {
+        // dedup or malformed — ignore
+      }
+    }
+  });
+
+  // Store contacts in SQLite
+  sock.ev.on("contacts.update", (contacts) => {
+    for (const c of contacts) {
+      try {
+        upsertContact(c.id, {
+          name: c.name,
+          notify: c.notify,
+          verifiedName: c.verifiedName,
+          isWhatsappUser: true,
+        });
+      } catch {
+        // ignore
+      }
+    }
+  });
 
   sock.ev.on("connection.update", (update) => {
     const { connection, lastDisconnect, qr } = update;
@@ -131,10 +168,7 @@ app.get("/qr", async (req, res) => {
 });
 
 app.get("/logs", (req, res) => {
-  const limit = Math.min(
-    parseInt(req.query.limit || "50", 10),
-    LOG_RING_SIZE
-  );
+  const limit = Math.min(parseInt(req.query.limit || "50", 10), LOG_RING_SIZE);
   res.json({ lines: logRing.slice(-limit) });
 });
 
@@ -146,8 +180,7 @@ app.post("/logout", async (req, res) => {
   state.jid = null;
   state.qr = null;
   clearTimeout(restartTimer);
-  rmSync(AUTH_DIR, { recursive: true, force: true });
-  mkdirSync(AUTH_DIR, { recursive: true });
+  if (authStateHandle) authStateHandle.clear();
   setTimeout(start, 500);
   res.json({ ok: true });
 });
@@ -163,8 +196,7 @@ app.post("/restart", async (req, res) => {
 
 app.post("/validate", requireConnected, async (req, res) => {
   const { number } = req.body || {};
-  if (!number)
-    return res.status(422).json({ error: "number required" });
+  if (!number) return res.status(422).json({ error: "number required" });
   try {
     const results = await state.sock.onWhatsApp(number);
     const first = results?.[0];
@@ -202,16 +234,9 @@ app.post("/send/media", requireConnected, async (req, res) => {
     else if (mt.startsWith("video/"))
       content = { video: source.buffer ?? { url: source.url }, caption };
     else if (mt.startsWith("audio/"))
-      content = {
-        audio: source.buffer ?? { url: source.url },
-        mimetype: mt,
-      };
+      content = { audio: source.buffer ?? { url: source.url }, mimetype: mt };
     else
-      content = {
-        document: source.buffer ?? { url: source.url },
-        mimetype: mt,
-        caption,
-      };
+      content = { document: source.buffer ?? { url: source.url }, mimetype: mt, caption };
     const r = await state.sock.sendMessage(jid, content);
     res.json({ message_id: r.key.id });
   } catch (e) {
@@ -231,6 +256,72 @@ app.post("/send/ptt", requireConnected, async (req, res) => {
       mimetype: "audio/ogg; codecs=opus",
     });
     res.json({ message_id: r.key.id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── New: Contacts API ──────────────────────────────────────────────────────
+
+app.get("/contacts", (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit || "100", 10), 500);
+  const offset = parseInt(req.query.offset || "0", 10);
+  if (req.query.q) {
+    return res.json({ contacts: searchContacts(req.query.q, limit, offset) });
+  }
+  res.json({ contacts: listContacts(limit, offset) });
+});
+
+app.get("/contacts/:jid", (req, res) => {
+  const c = getContact(req.params.jid);
+  if (!c) return res.status(404).json({ error: "contact not found" });
+  res.json(c);
+});
+
+// ── New: Messages API ──────────────────────────────────────────────────────
+
+app.get("/messages", (req, res) => {
+  const jid = req.query.jid;
+  const limit = Math.min(parseInt(req.query.limit || "50", 10), 200);
+  const offset = parseInt(req.query.offset || "0", 10);
+
+  if (jid) {
+    const msgs = listMessages(jid, limit, offset);
+    return res.json({ messages: msgs });
+  }
+  const msgs = recentMessages(limit);
+  res.json({ messages: msgs });
+});
+
+app.get("/messages/count", (req, res) => {
+  res.json({ count: countMessages() });
+});
+
+app.get("/messages/:id", (req, res) => {
+  const m = getMessage(req.params.id);
+  if (!m) return res.status(404).json({ error: "message not found" });
+  res.json(m);
+});
+
+// ── New: Sync contacts from WA ─────────────────────────────────────────────
+
+app.post("/contacts/sync", requireConnected, async (req, res) => {
+  try {
+    const fetched = [];
+    // Baileys doesn't have a direct "getAllContacts", but we can
+    // fetch them via the contact query mechanism
+    const contactJids = Object.keys(state.sock.contacts || {});
+    for (const jid of contactJids) {
+      const c = state.sock.contacts[jid];
+      upsertContact(jid, {
+        name: c.name,
+        notify: c.notify,
+        verifiedName: c.verifiedName,
+        isWhatsappUser: true,
+      });
+      fetched.push(jid);
+    }
+    res.json({ synced: fetched.length });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

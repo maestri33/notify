@@ -12,3 +12,4 @@ backups/
 notify-qr.png
 node_modules/
 *.log
+migrate-auth.cjs
