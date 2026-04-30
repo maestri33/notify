@@ -2,7 +2,7 @@
 
 from typing import Any
 
-import httpx
+import niquests
 
 from app.config import settings
 
@@ -18,9 +18,8 @@ class BaileysClient:
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         try:
-            with httpx.Client(timeout=self.timeout) as c:
-                r = c.request(method, f"{self.base_url}{path}", **kwargs)
-        except httpx.HTTPError as e:
+            r = niquests.request(method, f"{self.base_url}{path}", timeout=self.timeout, **kwargs)
+        except niquests.RequestException as e:
             raise BaileysError(f"sidecar unreachable: {e}") from e
         if r.status_code >= 400:
             raise BaileysError(f"sidecar {path} -> {r.status_code}: {r.text}")
@@ -33,9 +32,8 @@ class BaileysClient:
 
     def qr_png(self) -> bytes | None:
         try:
-            with httpx.Client(timeout=self.timeout) as c:
-                r = c.get(f"{self.base_url}/qr")
-        except httpx.HTTPError as e:
+            r = niquests.get(f"{self.base_url}/qr", timeout=self.timeout)
+        except niquests.RequestException as e:
             raise BaileysError(f"sidecar unreachable: {e}") from e
         if r.status_code == 404:
             return None

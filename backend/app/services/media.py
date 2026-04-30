@@ -4,7 +4,7 @@ import mimetypes
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-import httpx
+import niquests
 
 MAX_BYTES = 25 * 1024 * 1024  # 25 MB
 TIMEOUT = 30.0
@@ -33,8 +33,7 @@ def _filename_from_url(url: str) -> str:
 
 
 def download(url: str) -> Media:
-    with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as c:
-        r = c.get(url)
+    r = niquests.get(url, timeout=TIMEOUT, follow_redirects=True)
     r.raise_for_status()
     if len(r.content) > MAX_BYTES:
         raise ValueError(f"media {url} exceeds {MAX_BYTES} bytes")

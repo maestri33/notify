@@ -1,6 +1,6 @@
 """ElevenLabs TTS — generates OGG/Opus audio suitable for WhatsApp PTT."""
 
-import httpx
+import niquests
 
 from app.models import ServiceConfig
 
@@ -29,8 +29,8 @@ def synthesize(text: str, cfg: ServiceConfig) -> bytes:
         "model_id": cfg.elevenlabs_model_id,
         "output_format": "opus_48000_128",
     }
-    with httpx.Client(timeout=60.0) as c:
-        r = c.post(url, headers=headers, json=payload)
+    r = niquests.post(url, headers=headers, json=payload, timeout=60.0)
+
     if r.status_code >= 400:
         raise TTSError(f"elevenlabs {r.status_code}: {r.text[:300]}")
     return r.content

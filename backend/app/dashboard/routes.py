@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import httpx
+import niquests
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -339,7 +339,7 @@ async def test_sms(request: Request) -> HTMLResponse:
     if form.get("sms_gateway_user"):
         auth = (form.get("sms_gateway_user"), form.get("sms_gateway_pass") or "")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as c:
+        async with niquests.AsyncSession(timeout=10.0) as c:
             r = await c.get(f"{url}/health", auth=auth)
         if r.status_code < 400:
             return HTMLResponse("<small style='color:green'>✅ gateway respondeu</small>")
@@ -355,7 +355,7 @@ async def test_elevenlabs(request: Request) -> HTMLResponse:
     if not key:
         return HTMLResponse("<small style='color:#c00'>❌ api key vazia</small>")
     try:
-        async with httpx.AsyncClient(timeout=10.0) as c:
+        async with niquests.AsyncSession(timeout=10.0) as c:
             r = await c.get(
                 "https://api.elevenlabs.io/v1/user", headers={"xi-api-key": key}
             )

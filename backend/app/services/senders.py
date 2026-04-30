@@ -11,7 +11,7 @@ import logging
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
-import httpx
+import niquests
 from aiosmtplib import SMTP
 from jinja2 import Environment, select_autoescape
 
@@ -75,12 +75,11 @@ def send_whatsapp(
 def _head_mimetype(url: str) -> str:
     """Cheap HEAD request to guess mimetype; falls back to extension."""
     try:
-        with httpx.Client(timeout=10.0, follow_redirects=True) as c:
-            r = c.head(url)
-            ct = r.headers.get("content-type")
-            if ct:
-                return ct.split(";")[0].strip()
-    except httpx.HTTPError:
+        r = niquests.head(url, timeout=10.0, follow_redirects=True)
+        ct = r.headers.get("content-type")
+        if ct:
+            return ct.split(";")[0].strip()
+    except niquests.RequestException:
         pass
     import mimetypes
 
@@ -111,8 +110,7 @@ def send_sms(
         auth = (cfg.sms_gateway_user, cfg.sms_gateway_pass)
 
     url = f"{cfg.sms_gateway_url.rstrip('/')}/message"
-    with httpx.Client(timeout=30.0) as c:
-        r = c.post(url, json=payload, auth=auth)
+    r = niquests.post(url, json=payload, auth=auth, timeout=30.0)
     if r.status_code >= 400:
         raise RuntimeError(f"sms-gateway {r.status_code}: {r.text[:300]}")
     data = r.json()
