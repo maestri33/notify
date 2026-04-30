@@ -88,7 +88,6 @@ if ! echo ":${PATH}:" | grep -q ":${BIN_DIR}:"; then
     else
         warn "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc"
     fi
-    # Run final test via full path to avoid PATH issue
     NOTIFY_BIN="$BIN_DIR/notify"
 else
     NOTIFY_BIN="notify"
@@ -111,6 +110,12 @@ echo ""
 echo "  Usage:"
 echo "    notify status"
 echo "    notify recipients list"
+echo "    notify groups list"
+echo "    notify users get <jid>"
+echo "    notify groups get <jid>"
+echo "    notify groups members <jid>"
+echo "    notify whatsapp validate <number>"
 echo "    notify notifications send <id> \"Hello\" --channel whatsapp"
+echo "    notify --json status     # machine-readable output"
 echo "    notify --help"
 echo ""

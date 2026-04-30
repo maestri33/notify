@@ -6,14 +6,25 @@ Guia operacional para agentes de IA utilizarem o Notify via CLI com segurança e
 
 ## Uso rápido da CLI
 
-**Inside Docker (preferred):**
+**No servidor (native install):**
+```bash
+notify <command>
+```
+
+**Inside Docker:**
 ```bash
 docker compose exec api notify <command>
 ```
 
-**From host (requires Notify installed locally):**
+**Remoto (CLI only install):**
 ```bash
-NOTIFY_URL=http://<host>:8001 notify <command>
+NOTIFY_URL=http://<host>:8000 notify <command>
+```
+
+Flag `--json` antes de qualquer comando retorna JSON machine-readable:
+```bash
+notify --json status
+notify --json groups list
 ```
 
 ---
@@ -35,6 +46,11 @@ List all recipients:
 notify recipients list
 ```
 
+Filter by external_id:
+```bash
+notify recipients list --filter <external_id>
+```
+
 Update a recipient:
 ```bash
 notify recipients update <id> --phone <number>
@@ -43,6 +59,11 @@ notify recipients update <id> --phone <number>
 Consultar recipient por ID:
 ```bash
 notify recipients get <recipient_id>
+```
+
+Revalidar WhatsApp de um recipient:
+```bash
+notify recipients revalidate <recipient_id>
 ```
 
 ---
@@ -69,7 +90,16 @@ notify notifications send <external_id> "msg" --media https://example.com/img.jp
 
 ```bash
 # Last 10 delivery logs for a recipient
-notify notifications logs --recipient <external_id> -n 10
+notify notifications logs --recipient <external_id> --limit 10
+
+# Filter by status (sent, failed, pending)
+notify notifications logs --status sent --limit 5
+
+# Filter by channel
+notify notifications logs --channel whatsapp
+
+# Filter by time range
+notify notifications logs --since 2026-04-29T00:00:00
 
 # Full detail for a specific log entry
 notify notifications get <log_id>
@@ -81,9 +111,49 @@ notify notifications get <log_id>
 
 ```bash
 notify status            # overall application health
-notify whatsapp status   # WhatsApp connection state
+notify whatsapp status   # WhatsApp connection state + JID
 notify whatsapp qr       # renderiza QR no terminal para pareamento
 notify whatsapp qr --save notify-qr.png  # opcional: salvar PNG
+```
+
+---
+
+## WhatsApp Groups
+
+```bash
+# Listar todos os grupos
+notify groups list
+
+# Detalhes do grupo (metadados + participantes)
+notify groups get <jid>          # ex: 120363267922740326@g.us
+
+# Apenas membros
+notify groups members <jid>
+
+# Link de convite
+notify groups invite <jid>
+```
+
+---
+
+## WhatsApp Users
+
+```bash
+# Perfil completo: foto (alta/baixa res), status, contato
+notify users get <jid>           # ex: 5511999999999@s.whatsapp.net
+```
+
+---
+
+## WhatsApp Validation
+
+```bash
+# Verificar se número está no WhatsApp
+notify whatsapp validate <number>  # ex: 5511999999999
+
+# Logout / restart
+notify whatsapp logout [-y]
+notify whatsapp restart
 ```
 
 ---
@@ -96,6 +166,8 @@ notify whatsapp qr --save notify-qr.png  # opcional: salvar PNG
 4. **`--tts` é multicanal** (áudio no WhatsApp, texto em SMS/Email na mesma requisição).
 5. **Mídias devem ser URL pública acessível** no momento do envio.
 6. **Verifique `notify whatsapp status` antes de envios WhatsApp/TTS**; se não estiver `connected`, avise o operador.
+7. **`notify whatsapp validate` confirma se um número está registrado no WhatsApp** antes de criar recipient.
+8. **Grupos retornam JID no formato `120363XXXXXXXXXX@g.us`** — use esse JID para consultar detalhes/membros.
 
 ## Checklist recomendado antes de enviar em produção
 

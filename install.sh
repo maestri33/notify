@@ -20,6 +20,7 @@
 #
 # After install:
 #   - Dashboard:   http://<host>:8000
+#   - API docs:    http://<host>:8000/docs
 #   - Baileys QR:  http://<host>:8000/baileys
 #   - Config:      http://<host>:8000/config
 #   - CLI:         notify --help
@@ -118,6 +119,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 DATABASE_URL=sqlite:///$NOTIFY_DATA/notify.db
 REDIS_URL=redis://localhost:6379/0
 BAILEYS_URL=http://localhost:$BAILEYS_PORT
+BAILEYS_DB_PATH=$NOTIFY_DATA/baileys.db
 APP_ENV=production
 LOG_LEVEL=INFO
 NOTIFY_URL=http://localhost:$API_PORT
@@ -196,7 +198,7 @@ _write_service "worker-email" \
     "$VENV/bin/rq worker email --url \${REDIS_URL}" \
     "$NOTIFY_HOME/backend"
 
-# Baileys — no EnvironmentFile, uses its own env vars
+# Baileys — no EnvironmentFile/Redis, uses its own env vars
 NODE_BIN="$(which node)"
 cat > "/etc/systemd/system/notify-baileys.service" <<EOF
 [Unit]
@@ -209,6 +211,7 @@ User=$NOTIFY_USER
 WorkingDirectory=$NOTIFY_HOME/baileys-sidecar
 Environment=PORT=$BAILEYS_PORT
 Environment=AUTH_DIR=$NOTIFY_DATA/auth
+Environment=BAILEYS_DB_PATH=$NOTIFY_DATA/baileys.db
 ExecStart=$NODE_BIN index.js
 Restart=on-failure
 RestartSec=5
@@ -235,16 +238,15 @@ done
 # ── 10. firewall ──────────────────────────────────────────────────────────────
 if command -v ufw &>/dev/null && [[ -z "${SKIP_UFW:-}" ]]; then
     info "Configuring UFW..."
-    if ufw --force reset 2>/dev/null && \
-       ufw default deny incoming 2>/dev/null && \
-       ufw default allow outgoing 2>/dev/null && \
-       ufw allow 22/tcp 2>/dev/null && \
-       ufw allow "$API_PORT/tcp" 2>/dev/null && \
-       ufw --force enable 2>/dev/null; then
-        warn "UFW active. Restrict port $API_PORT to your VPN subnet when ready:"
+    # Only add rules — never reset existing firewall configuration
+    ufw allow 22/tcp 2>/dev/null || true
+    ufw allow "$API_PORT/tcp" 2>/dev/null || true
+    if ufw status | grep -q "Status: inactive"; then
+        ufw --force enable 2>/dev/null || true
+        warn "UFW enabled. Restrict port $API_PORT to your VPN subnet when ready:"
         warn "  ufw delete allow $API_PORT/tcp && ufw allow from <vpn-subnet> to any port $API_PORT"
     else
-        warn "UFW could not be configured (normal in containers — configure manually on the LXC)."
+        info "UFW already active — rules added."
     fi
 fi
 
@@ -256,6 +258,7 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || echo '<host>')"
 echo "  Dashboard  →  http://$HOST_IP:$API_PORT"
+echo "  API docs   →  http://$HOST_IP:$API_PORT/docs"
 echo "  CLI        →  notify --help"
 echo "  Logs       →  journalctl -u notify-api -f"
 echo ""
@@ -263,6 +266,9 @@ echo "  Next steps:"
 echo "    1. Open /baileys in the dashboard and scan the WhatsApp QR"
 echo "    2. Open /config and fill in SMTP / SMS Gateway / ElevenLabs"
 echo "    3. Run: notify status"
+echo "    4. Try:  notify groups list"
+echo "             notify users get <jid>"
+echo "             notify notifications send <id> \"Hello\""
 if [[ ${#FAILED[@]} -gt 0 ]]; then
     echo ""
     warn "Services not started (start manually after boot):"
