@@ -142,3 +142,15 @@ def _to_message(row: sqlite3.Row) -> BaileysMessage:
         message_json=row["message_json"],
         created_at=row["created_at"],
     )
+
+def batch_get_contacts(jids: list[str]) -> dict[str, BaileysContact]:
+    """Return contacts keyed by JID (empty dict for an empty list)."""
+    if not jids:
+        return {}
+    with _connect() as conn:
+        placeholders = ",".join("?" for _ in jids)
+        rows = conn.execute(
+            f"SELECT * FROM baileys_contacts WHERE jid IN ({placeholders})",
+            jids,
+        ).fetchall()
+    return {r["jid"]: _to_contact(r) for r in rows}

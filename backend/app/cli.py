@@ -522,6 +522,21 @@ def groups_members(
         rprint(f"  {p['id']}{admin}")
 
 
+@groups_app.command("contacts")
+def groups_contacts(
+    jid: str = typer.Argument(help="Group JID"),
+):
+    """List group members with contact names."""
+    data = _get(f"/baileys/groups/{jid}/members/contacts")
+    if _output_json:
+        return _json_output(data)
+    rprint(f"[bold]{data["subject"]}[/bold] — {len(data["participants"])} members")
+    for p in data["participants"]:
+        name = p.get("name") or "-"
+        admin = " [yellow]admin[/yellow]" if p.get("admin") else ""
+        rprint(f"  {name:40s} {p["id"]}{admin}")
+
+
 @groups_app.command("invite")
 def groups_invite(
     jid: str = typer.Argument(help="Group JID"),

@@ -3,6 +3,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.schemas import (
+    GroupMembersEnriched,
+    MemberWithContact,
     GroupDetail,
     GroupInvite,
     GroupList,
@@ -11,6 +13,7 @@ from app.api.schemas import (
     UserProfile,
 )
 from app.baileys_db import (
+    batch_get_contacts,
     count_contacts,
     count_messages,
     get_contact,
@@ -118,3 +121,34 @@ def api_get_user(jid: str, baileys: BaileysClient = Depends(get_baileys)):
         return baileys.get_user(jid)
     except BaileysError as e:
         raise HTTPException(503, f"Baileys unreachable: {e}")
+
+# ── Enriched Members (members + contact names from DB) ─────────────────
+
+@router.get("/groups/{jid}/members/contacts", response_model=GroupMembersEnriched)
+def api_get_group_members_contacts(
+    jid: str, baileys: BaileysClient = Depends(get_baileys)
+):
+    """Get group members with contact names from the shared SQLite DB."""
+    try:
+        members = baileys.get_group_members(jid)
+    except BaileysError as e:
+        raise HTTPException(503, f"Baileys unreachable: {e}")
+
+    lids = [p["id"] for p in members["participants"]]
+    contacts = batch_get_contacts(lids)
+
+    enriched = []
+    for p in members["participants"]:
+        c = contacts.get(p["id"])
+        enriched.append(MemberWithContact(
+            id=p["id"],
+            admin=p.get("admin"),
+            name=c.notify or c.name if c else None,
+            contact_jid=None,
+        ))
+
+    return GroupMembersEnriched(
+        jid=members["jid"],
+        subject=members["subject"],
+        participants=enriched,
+    )

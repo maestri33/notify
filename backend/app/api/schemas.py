@@ -195,3 +195,17 @@ class UserProfile(BaseModel):
     profile_picture_url_low: str | None = None
     status: list | dict | None = None  # raw status from Baileys (array or object)
     contact: dict | None = None  # DB contact row
+
+# ── Enriched Members (with contact info) ──────────────────────────────────
+
+class MemberWithContact(BaseModel):
+    id: str
+    admin: str | None = None
+    name: str | None = None        # from contacts.notify or contacts.name
+    contact_jid: str | None = None  # @s.whatsapp.net (phone) if available
+
+
+class GroupMembersEnriched(BaseModel):
+    jid: str
+    subject: str
+    participants: list[MemberWithContact]
