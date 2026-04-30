@@ -4,6 +4,20 @@ Internal multi-channel notification service. Send a recipient `external_id` + ma
 
 Consumed by internal apps over a VPN. No authentication.
 
+## Install
+
+**Servidor completo** (Ubuntu 24.04 LXC — API, sidecar, Redis, tudo):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/maestri33/notify/main/install.sh | bash
+```
+
+**CLI remota** (qualquer máquina com Python 3.10+ e curl):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/maestri33/notify/main/install_cli.sh | bash -s http://<ip-do-servidor>:8000
+```
+
 ## Stack
 
 | Layer | Technology |
