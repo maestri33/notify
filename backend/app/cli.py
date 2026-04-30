@@ -74,31 +74,31 @@ def _api(path: str) -> str:
 
 
 def _get(path: str, **params) -> dict:
-    r = httpx.get(_api(path), params={k: v for k, v in params.items() if v is not None}, timeout=15)
+    r = httpx.get(_api(path), params={k: v for k, v in params.items() if v is not None}, timeout=60)
     _check(r)
     return r.json()
 
 
 def _post(path: str, body: dict) -> dict:
-    r = httpx.post(_api(path), json=body, timeout=15)
+    r = httpx.post(_api(path), json=body, timeout=60)
     _check(r)
     return r.json()
 
 
 def _put(path: str, body: dict) -> dict:
-    r = httpx.put(_api(path), json=body, timeout=15)
+    r = httpx.put(_api(path), json=body, timeout=60)
     _check(r)
     return r.json()
 
 
 def _patch(path: str, body: dict) -> dict:
-    r = httpx.patch(_api(path), json=body, timeout=15)
+    r = httpx.patch(_api(path), json=body, timeout=60)
     _check(r)
     return r.json()
 
 
 def _delete(path: str) -> None:
-    r = httpx.delete(_api(path), timeout=15)
+    r = httpx.delete(_api(path), timeout=60)
     _check(r)
 
 
@@ -421,7 +421,7 @@ def whatsapp_qr(
 ):
     """Show WhatsApp QR code for pairing."""
     url = _api("/whatsapp/qr")
-    r = httpx.get(url, timeout=10)
+    r = httpx.get(url, timeout=15)
     if r.status_code == 404:
         rprint("[green]Already connected — no QR available.[/green]")
         return

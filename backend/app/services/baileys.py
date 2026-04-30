@@ -12,7 +12,7 @@ class BaileysError(Exception):
 
 
 class BaileysClient:
-    def __init__(self, base_url: str | None = None, timeout: float = 30.0) -> None:
+    def __init__(self, base_url: str | None = None, timeout: float = 90.0) -> None:
         self.base_url = (base_url or settings.baileys_url).rstrip("/")
         self.timeout = timeout
 
