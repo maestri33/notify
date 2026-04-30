@@ -14,6 +14,7 @@ from app.api.schemas import (
 )
 from app.baileys_db import (
     batch_get_contacts,
+    get_pushnames_for_group,
     count_contacts,
     count_messages,
     get_contact,
@@ -136,14 +137,19 @@ def api_get_group_members_contacts(
 
     lids = [p["id"] for p in members["participants"]]
     contacts = batch_get_contacts(lids)
+    pushnames = get_pushnames_for_group(jid)
 
     enriched = []
     for p in members["participants"]:
         c = contacts.get(p["id"])
+        # Prefer contact name, then pushName from message history
+        name = (c.notify or c.name) if c else None
+        if not name:
+            name = pushnames.get(p["id"])
         enriched.append(MemberWithContact(
             id=p["id"],
             admin=p.get("admin"),
-            name=c.notify or c.name if c else None,
+            name=name,
             contact_jid=None,
         ))
 

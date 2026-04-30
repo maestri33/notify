@@ -154,3 +154,23 @@ def batch_get_contacts(jids: list[str]) -> dict[str, BaileysContact]:
             jids,
         ).fetchall()
     return {r["jid"]: _to_contact(r) for r in rows}
+
+def get_pushnames_for_group(group_jid: str) -> dict[str, str]:
+    """Extract participant -> pushName from message history for a group."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT message_json FROM baileys_messages WHERE remote_jid = ?",
+            (group_jid,),
+        ).fetchall()
+    import json as _json
+    names: dict[str, str] = {}
+    for (msg_json,) in rows:
+        try:
+            msg = _json.loads(msg_json)
+        except _json.JSONDecodeError:
+            continue
+        pn = msg.get("pushName")
+        participant = (msg.get("key", {}) or {}).get("participant")
+        if pn and participant and participant not in names:
+            names[participant] = pn
+    return names
