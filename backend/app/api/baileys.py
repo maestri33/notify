@@ -1,7 +1,15 @@
-"""API endpoints that read directly from the shared Baileys SQLite database."""
+"""API endpoints — Baileys WhatsApp sidecar (groups, users, contacts, messages)."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api.schemas import (
+    GroupDetail,
+    GroupInvite,
+    GroupList,
+    GroupMembers,
+    GroupSummary,
+    UserProfile,
+)
 from app.baileys_db import (
     count_contacts,
     count_messages,
@@ -12,9 +20,12 @@ from app.baileys_db import (
     recent_messages,
     search_contacts,
 )
+from app.services.baileys import BaileysClient, BaileysError, get_baileys
 
 router = APIRouter(prefix="/baileys", tags=["baileys"])
 
+
+# ── Contacts (read from shared SQLite) ──────────────────────────────────
 
 @router.get("/contacts")
 def api_list_contacts(
@@ -34,6 +45,8 @@ def api_get_contact(jid: str):
         return {"error": "not found"}, 404
     return c
 
+
+# ── Messages (read from shared SQLite) ──────────────────────────────────
 
 @router.get("/messages")
 def api_list_messages(
@@ -60,3 +73,48 @@ def api_stats():
         "contacts": count_contacts(),
         "messages": count_messages(),
     }
+
+
+# ── Groups (proxied to sidecar) ─────────────────────────────────────────
+
+@router.get("/groups", response_model=GroupList)
+def api_list_groups(baileys: BaileysClient = Depends(get_baileys)):
+    try:
+        groups = baileys.list_groups()
+    except BaileysError as e:
+        raise HTTPException(503, f"Baileys unreachable: {e}")
+    return GroupList(groups=[GroupSummary(**g) for g in groups])
+
+
+@router.get("/groups/{jid}", response_model=GroupDetail)
+def api_get_group(jid: str, baileys: BaileysClient = Depends(get_baileys)):
+    try:
+        return baileys.get_group(jid)
+    except BaileysError as e:
+        raise HTTPException(503, f"Baileys unreachable: {e}")
+
+
+@router.get("/groups/{jid}/members", response_model=GroupMembers)
+def api_get_group_members(jid: str, baileys: BaileysClient = Depends(get_baileys)):
+    try:
+        return baileys.get_group_members(jid)
+    except BaileysError as e:
+        raise HTTPException(503, f"Baileys unreachable: {e}")
+
+
+@router.get("/groups/{jid}/invite", response_model=GroupInvite)
+def api_get_group_invite(jid: str, baileys: BaileysClient = Depends(get_baileys)):
+    try:
+        return baileys.get_group_invite(jid)
+    except BaileysError as e:
+        raise HTTPException(503, f"Baileys unreachable: {e}")
+
+
+# ── User Profile (proxied to sidecar) ───────────────────────────────────
+
+@router.get("/users/{jid}", response_model=UserProfile)
+def api_get_user(jid: str, baileys: BaileysClient = Depends(get_baileys)):
+    try:
+        return baileys.get_user(jid)
+    except BaileysError as e:
+        raise HTTPException(503, f"Baileys unreachable: {e}")

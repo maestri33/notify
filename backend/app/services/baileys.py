@@ -26,6 +26,8 @@ class BaileysClient:
             raise BaileysError(f"sidecar {path} -> {r.status_code}: {r.text}")
         return r.json()
 
+    # ── Status / Auth ────────────────────────────────────────────────────
+
     def status(self) -> dict[str, Any]:
         return self._request("GET", "/status")
 
@@ -49,6 +51,8 @@ class BaileysClient:
 
     def restart(self) -> None:
         self._request("POST", "/restart")
+
+    # ── Send ─────────────────────────────────────────────────────────────
 
     def validate(self, number: str) -> dict[str, Any]:
         """Returns {'exists': bool, 'jid': str|None}."""
@@ -79,6 +83,30 @@ class BaileysClient:
         return self._request(
             "POST", "/send/ptt", json={"jid": jid, "audio_base64": audio_base64}
         )["message_id"]
+
+    # ── Groups ───────────────────────────────────────────────────────────
+
+    def list_groups(self) -> list[dict[str, Any]]:
+        """GET /groups — all participating groups."""
+        return self._request("GET", "/groups").get("groups", [])
+
+    def get_group(self, jid: str) -> dict[str, Any]:
+        """GET /groups/:jid — full group metadata including participants."""
+        return self._request("GET", f"/groups/{jid}")
+
+    def get_group_members(self, jid: str) -> dict[str, Any]:
+        """GET /groups/:jid/members — subject + participants only."""
+        return self._request("GET", f"/groups/{jid}/members")
+
+    def get_group_invite(self, jid: str) -> dict[str, Any]:
+        """GET /groups/:jid/invite — invite code + link."""
+        return self._request("GET", f"/groups/{jid}/invite")
+
+    # ── Users ────────────────────────────────────────────────────────────
+
+    def get_user(self, jid: str) -> dict[str, Any]:
+        """GET /users/:jid — profile picture URLs, status, contact info."""
+        return self._request("GET", f"/users/{jid}")
 
 
 def get_baileys() -> BaileysClient:

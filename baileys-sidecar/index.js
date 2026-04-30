@@ -345,6 +345,96 @@ app.get("/messages/:id", (req, res) => {
   res.json(m);
 });
 
+// ── Groups API ──────────────────────────────────────────────────────────────
+
+app.get("/groups", requireConnected, async (req, res) => {
+  try {
+    const groups = await state.sock.groupFetchAllParticipating();
+    const list = Object.entries(groups || {}).map(([jid, g]) => ({
+      jid,
+      subject: g.subject,
+      subject_owner: g.subjectOwner,
+      subject_time: g.subjectTime,
+      size: g.size,
+      creation: g.creation,
+      owner: g.owner,
+      desc: g.desc,
+      announce: g.announce,
+      restrict: g.restrict,
+      ephemeral: g.ephemeral,
+      is_group: true,
+    }));
+    res.json({ groups: list });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/groups/:jid", requireConnected, async (req, res) => {
+  try {
+    const metadata = await state.sock.groupMetadata(req.params.jid);
+    res.json(metadata);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/groups/:jid/members", requireConnected, async (req, res) => {
+  try {
+    const metadata = await state.sock.groupMetadata(req.params.jid);
+    res.json({
+      jid: metadata.id,
+      subject: metadata.subject,
+      participants: metadata.participants,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/groups/:jid/invite", requireConnected, async (req, res) => {
+  try {
+    const code = await state.sock.groupInviteCode(req.params.jid);
+    res.json({
+      jid: req.params.jid,
+      invite_code: code,
+      invite_link: `https://chat.whatsapp.com/${code}`,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── User Profile API ────────────────────────────────────────────────────────
+
+app.get("/users/:jid", requireConnected, async (req, res) => {
+  try {
+    const jid = req.params.jid;
+    const [ppHigh, ppLow, userStatus, contact] = await Promise.allSettled([
+      state.sock.profilePictureUrl(jid, "image").catch(() => null),
+      state.sock.profilePictureUrl(jid).catch(() => null),
+      state.sock.fetchStatus(jid).catch(() => null),
+      (async () => {
+        const c = getContact(jid);
+        if (c) return c;
+        const sc = state.sock.contacts?.[jid];
+        if (sc) return { jid, name: sc.name, notify: sc.notify, verified_name: sc.verifiedName };
+        return null;
+      })(),
+    ]);
+
+    res.json({
+      jid,
+      profile_picture_url_high: ppHigh.status === "fulfilled" ? ppHigh.value : null,
+      profile_picture_url_low: ppLow.status === "fulfilled" ? ppLow.value : null,
+      status: userStatus.status === "fulfilled" ? userStatus.value : null,
+      contact: contact.status === "fulfilled" ? contact.value : null,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Contacts sync ──────────────────────────────────────────────────────────
 
 app.post("/contacts/sync", requireConnected, async (req, res) => {

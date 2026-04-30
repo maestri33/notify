@@ -6,6 +6,7 @@ import base64
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.api.schemas import ServiceStatus, WhatsAppStatus
@@ -110,6 +111,30 @@ def whatsapp_qr(
         )
 
     return Response(content=png, media_type="image/png")
+
+
+# ---------- POST /whatsapp/validate ----------
+
+class ValidateRequest(BaseModel):
+    number: str
+
+
+class ValidateResponse(BaseModel):
+    exists: bool
+    jid: str | None = None
+
+
+@router.post("/whatsapp/validate", response_model=ValidateResponse)
+def whatsapp_validate(
+    body: ValidateRequest,
+    baileys: BaileysClient = Depends(get_baileys),
+):
+    """Check if a phone number is registered on WhatsApp."""
+    try:
+        result = baileys.validate(body.number)
+    except BaileysError as e:
+        raise HTTPException(503, f"Baileys unreachable: {e}")
+    return ValidateResponse(exists=result.get("exists", False), jid=result.get("jid"))
 
 
 # ---------- POST /whatsapp/logout ----------

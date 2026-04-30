@@ -6,6 +6,8 @@ from pydantic import BaseModel, EmailStr
 from app.models import Channel, NotificationStatus
 
 
+# ── Recipients ──────────────────────────────────────────────────────────
+
 class RecipientCreate(BaseModel):
     external_id: str
     email: EmailStr | None = None
@@ -28,6 +30,8 @@ class RecipientOut(BaseModel):
     updated_at: datetime
 
 
+# ── Status ──────────────────────────────────────────────────────────────
+
 class ServiceStatus(BaseModel):
     api: str  # "ok"
     whatsapp_state: str  # connected | qr_pending | connecting | disconnected | unreachable
@@ -45,6 +49,8 @@ class WhatsAppStatus(BaseModel):
     device_name: str | None
     last_seen: str | None
 
+
+# ── Notifications ───────────────────────────────────────────────────────
 
 class CheckResult(BaseModel):
     found: bool
@@ -74,6 +80,22 @@ class NotificationCreateResponse(BaseModel):
     jobs: list[NotificationJob]
     skipped: list[Channel]  # eligible channels that weren't triggered (e.g. forced filter)
 
+
+class NotificationLogOut(BaseModel):
+    id: UUID
+    notification_id: UUID
+    recipient_id: UUID
+    channel: Channel
+    status: NotificationStatus
+    attempts: int
+    is_tts: bool
+    error_msg: str | None
+    provider_msg_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+# ── Config ──────────────────────────────────────────────────────────────
 
 class ConfigUpdate(BaseModel):
     # SMTP
@@ -112,15 +134,64 @@ class ConfigOut(BaseModel):
     updated_at: datetime
 
 
-class NotificationLogOut(BaseModel):
-    id: UUID
-    notification_id: UUID
-    recipient_id: UUID
-    channel: Channel
-    status: NotificationStatus
-    attempts: int
-    is_tts: bool
-    error_msg: str | None
-    provider_msg_id: str | None
-    created_at: datetime
-    updated_at: datetime
+# ── Groups ──────────────────────────────────────────────────────────────
+
+class GroupSummary(BaseModel):
+    jid: str
+    subject: str
+    subject_owner: str | None = None
+    subject_time: int | None = None
+    size: int
+    creation: int | None = None
+    owner: str | None = None
+    desc: str | None = None
+    announce: bool = False
+    restrict: bool = False
+    ephemeral: int | None = None
+    is_group: bool = True
+
+
+class GroupList(BaseModel):
+    groups: list[GroupSummary]
+
+
+class GroupParticipant(BaseModel):
+    id: str
+    admin: str | None = None  # "admin" | "superadmin" | None
+
+
+class GroupDetail(BaseModel):
+    id: str
+    subject: str
+    subject_owner: str | None = None
+    subject_time: int | None = None
+    creation: int | None = None
+    owner: str | None = None
+    desc: str | None = None
+    announce: bool = False
+    restrict: bool = False
+    ephemeral: int | None = None
+    size: int
+    participants: list[GroupParticipant]
+
+
+class GroupMembers(BaseModel):
+    jid: str
+    subject: str
+    participants: list[GroupParticipant]
+
+
+class GroupInvite(BaseModel):
+    jid: str
+    invite_code: str
+    invite_link: str
+
+
+# ── User Profile ────────────────────────────────────────────────────────
+
+class UserProfile(BaseModel):
+    jid: str
+    profile_picture_url_high: str | None = None
+    profile_picture_url_low: str | None = None
+    status: list | dict | None = None  # raw status from Baileys (array or object)
+    contact: dict | None = None  # DB contact row
