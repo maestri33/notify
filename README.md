@@ -23,6 +23,7 @@ curl -fsSL https://raw.githubusercontent.com/maestri33/notify/main/install_cli.s
 | Layer | Technology |
 |-------|-----------|
 | **API / Dashboard** | FastAPI + SQLModel + Jinja2 + HTMX |
+| **Database** | PostgreSQL 16 (via pgBouncer) |
 | **Queue** | Redis + RQ (one worker per channel) |
 | **WhatsApp** | [Baileys](https://github.com/whiskeysockets/baileys) (Node.js HTTP + WebSocket sidecar) |
 | **SMS** | [SMS Gateway for Android](https://docs.sms-gate.app/) |
@@ -34,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/maestri33/notify/main/install_cli.s
 ```
 ┌─────────┐   HTTP POST    ┌──────────────┐   RQ enqueue   ┌──────────┐
 │  Client  │ ──────────────>│  FastAPI      │ ──────────────>│  Redis    │
-│  (CLI)   │ <──────────────│  :8000        │                │  :6379    │
+│  (CLI)   │ <──────────────│  :80/:8000    │                │  :6379    │
 └─────────┘   JSON response └──────┬───────┘                └─────┬─────┘
                                    │                              │
                                    │ HTTP                         │ dequeue
@@ -124,6 +125,7 @@ notify recipients check <phone-or-email>  # lookup by phone/email
 
 ```bash
 notify notifications send <external_id> "content" [--tts] [--channel whatsapp] [--media URL]
+notify notifications broadcast "content" --ids "id1,id2" [--tts] [--channel whatsapp]
 notify notifications logs [--recipient ID] [--channel C] [--status S] [--since ISO] [--limit N]
 notify notifications get <log-uuid>
 ```
@@ -136,6 +138,9 @@ notify whatsapp qr [--save qr.png] [--terminal/--no-terminal]
 notify whatsapp validate <number>     # check if number is on WhatsApp
 notify whatsapp logout [-y]
 notify whatsapp restart
+notify whatsapp send-text <phone> "text"
+notify whatsapp send-ptt <phone> --text "text to speak" [--audio-file ogg]
+notify whatsapp broadcast "content" --phones "p1,p2" [--tts] [--media URL]
 ```
 
 ### Groups
@@ -144,6 +149,7 @@ notify whatsapp restart
 notify groups list              # all groups (sorted by size)
 notify groups get <jid>         # full metadata + participants
 notify groups members <jid>     # member list only
+notify groups contacts <jid>    # members with contact names
 notify groups invite <jid>      # invite link
 ```
 
@@ -166,42 +172,44 @@ notify config set --smtp-host ... --sms-url ... --el-api-key ...
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/status` | System health (API, Redis, WhatsApp, config) |
+| `GET` | `/status` | System health (API, Redis, WhatsApp, configs) |
+| `GET` | `/check?phone=&email=` | Lookup phone/email in recipients |
+| `GET` | `/skill` | Return SKILL.md — AI agent integration guide |
 | `GET` | `/recipients` | List recipients |
-| `GET` | `/recipients/check?q=` | Lookup by phone or email |
-| `POST` | `/recipients` | Create/upsert recipient |
+| `GET` | `/recipients/{id}` | Get recipient by UUID |
+| `POST` | `/recipients` | Create recipient (strict validation) |
 | `PATCH` | `/recipients/{id}` | Update recipient channels |
 | `DELETE` | `/recipients/{id}` | Delete recipient |
 | `POST` | `/recipients/{id}/revalidate` | Re-check WhatsApp validity |
 | `POST` | `/notifications` | Send notification |
+| `POST` | `/notifications/broadcast` | Send to multiple recipients |
 | `GET` | `/notifications` | List notification logs |
-| `GET` | `/notifications/{id}` | Get log entry |
+| `GET` | `/notifications/{log_id}` | Get log entry |
 | `GET/PUT` | `/config` | Read/update service config |
 
-### WhatsApp (`/api/v1`)
+### WhatsApp (`/api/v1/whatsapp`)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/whatsapp/status` | Connection state + JID |
-| `GET` | `/whatsapp/qr` | QR PNG (`?fmt=png` or `?fmt=base64`) |
-| `POST` | `/whatsapp/validate` | Check number on WhatsApp `{"number":"..."}` |
-| `POST` | `/whatsapp/logout` | Disconnect (re-pair needed) |
-| `POST` | `/whatsapp/restart` | Restart sidecar |
-
-### Baileys data (`/api/v1/baileys`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/contacts` | List contacts (from shared SQLite) |
+| `GET` | `/status` | Connection state + JID |
+| `GET` | `/qr?fmt=png\|base64` | QR code for pairing |
+| `POST` | `/validate` | Check if number is on WhatsApp `{"phone":"..."}` |
+| `POST` | `/logout` | Disconnect (re-pair needed) |
+| `POST` | `/restart` | Restart sidecar |
+| `POST` | `/send/text` | Send text to phone `{"phone","text"}` |
+| `POST` | `/send/ptt` | Send voice note to phone `{"phone","audio_base64?","text?"}` |
+| `POST` | `/broadcast` | Send to multiple phones `{"phones","content","is_tts?","media_urls?"}` |
+| `GET` | `/contacts?q=&limit=&offset=` | List/search contacts |
 | `GET` | `/contacts/{jid}` | Get contact by JID |
 | `GET` | `/messages?jid=&limit=&offset=` | List messages |
-| `GET` | `/messages/{id}` | Get message by ID |
+| `GET` | `/messages/{msg_id}` | Get message by ID |
+| `GET` | `/stats` | Contact + message counts |
 | `GET` | `/groups` | List all WhatsApp groups |
 | `GET` | `/groups/{jid}` | Group metadata + participants |
 | `GET` | `/groups/{jid}/members` | Members only |
+| `GET` | `/groups/{jid}/members/contacts` | Members with contact names |
 | `GET` | `/groups/{jid}/invite` | Invite code + link |
 | `GET` | `/users/{jid}` | Profile picture URLs, status, contact |
-| `GET` | `/stats` | Contact + message counts |
 
 ### WebSocket (sidecar, port 3000)
 
@@ -224,8 +232,12 @@ Direct access to the Node.js sidecar — normally consumed via FastAPI proxy:
 | `GET` | `/qr` | QR PNG |
 | `POST` | `/validate` | `{"number":"..."}` → `{exists, jid}` |
 | `POST` | `/send/text` | `{"jid","text"}` → `{message_id}` |
-| `POST` | `/send/media` | `{"jid","url"/"base64","mimetype","caption"}` |
+| `POST` | `/send/text/phone` | `{"phone","text"}` → `{message_id, jid}` |
 | `POST` | `/send/ptt` | `{"jid","audio_base64"}` → voice note |
+| `POST` | `/send/ptt/phone` | `{"phone","audio_base64"}` → `{message_id, jid}` |
+| `POST` | `/send/media` | `{"jid","url"/"base64","mimetype","caption"}` |
+| `POST` | `/broadcast/text` | `{"phones", "text"}` → `{results}` |
+| `POST` | `/broadcast/ptt` | `{"phones", "audio_base64"}` → `{results}` |
 | `GET` | `/contacts` | List/search contacts |
 | `GET` | `/messages` | List messages |
 | `GET` | `/groups` | List all groups |
@@ -254,18 +266,9 @@ docker compose logs -f api baileys
 docker compose restart api
 ```
 
-### Helper scripts
-
-```bash
-./scripts/send-test.sh <recipient_id> "msg"              # test notification
-./scripts/send-test.sh <recipient_id> "audio" --tts      # voice note
-./scripts/logs.sh [service]                              # tail compose logs
-./scripts/backup.sh [out_dir]                            # snapshot SQLite + auth
-```
-
 ## Data
 
-- **App DB**: `/var/lib/notify/notify.db` (SQLite — recipients, notifications, config)
+- **App DB**: PostgreSQL `10.10.10.135:6432/main_app`, schema `notify` (recipients, notification_logs, service_config, email_template)
 - **Baileys DB**: `/var/lib/notify/baileys.db` (SQLite — auth creds, keys, contacts, messages)
 - **Baileys auth**: `/var/lib/notify/auth/` (file-based fallback, migrated to SQLite on first run)
 - **Redis**: append-only at default path (survives restarts)
