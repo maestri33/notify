@@ -112,6 +112,35 @@ def _check(r: niquests.Response) -> None:
         raise typer.Exit(1)
 
 
+def _resolve_content(text: str, md_file: str | None = None) -> str:
+    """Resolve message content from a file, URL, or inline text.
+
+    Priority:
+      1. --md-file (local path)
+      2. text that looks like a URL ending in .md
+      3. text as-is
+    """
+    if md_file:
+        try:
+            with open(md_file) as fh:
+                return fh.read()
+        except OSError as e:
+            rprint(f"[red]Cannot read file: {e}[/red]")
+            raise typer.Exit(1)
+
+    t = text.strip()
+    if t.startswith(("http://", "https://")) and t.rsplit("?", 1)[0].endswith(".md"):
+        try:
+            r = niquests.get(t, timeout=30)
+            r.raise_for_status()
+            return r.text
+        except niquests.RequestException as e:
+            rprint(f"[red]Cannot fetch URL: {e}[/red]")
+            raise typer.Exit(1)
+
+    return text
+
+
 def _json(obj) -> None:
     console.print_json(json.dumps(obj))
 
@@ -261,15 +290,17 @@ app.add_typer(notifications_app, name="notifications")
 @notifications_app.command("send")
 def notifications_send(
     external_id: str = typer.Argument(help="Recipient external_id"),
-    content: str = typer.Argument(help="Message content (markdown supported)"),
+    content: str = typer.Argument(help="Message content (markdown, .md URL, or use --md-file)"),
     tts: bool = typer.Option(False, "--tts", help="Generate voice note for WhatsApp"),
     channel: Optional[list[str]] = typer.Option(None, "--channel", "-c", help="Force specific channel(s): whatsapp | sms | email"),
     media: Optional[list[str]] = typer.Option(None, "--media", "-m", help="Media URL(s) to attach"),
+    md_file: Optional[str] = typer.Option(None, "--md-file", help="Path to a local .md file with the message content"),
 ):
     """Send a notification to a recipient."""
+    resolved = _resolve_content(content, md_file)
     body: dict = {
         "external_id": external_id,
-        "content": content,
+        "content": resolved,
         "is_tts": tts,
         "media_urls": media or [],
     }
@@ -289,17 +320,19 @@ def notifications_send(
 
 @notifications_app.command("broadcast")
 def notifications_broadcast(
-    content: str = typer.Argument(help="Message content (markdown supported)"),
+    content: str = typer.Argument(help="Message content (markdown, .md URL, or use --md-file)"),
     tts: bool = typer.Option(False, "--tts", help="Generate voice note for WhatsApp (once for all)"),
     channel: Optional[list[str]] = typer.Option(None, "--channel", "-c", help="Force specific channel(s): whatsapp | sms | email"),
     media: Optional[list[str]] = typer.Option(None, "--media", "-m", help="Media URL(s) to attach"),
     external_ids: Optional[str] = typer.Option(None, "--ids", help="Comma-separated external_ids"),
     ids_file: Optional[str] = typer.Option(None, "--ids-file", "-f", help="File with one external_id per line"),
+    md_file: Optional[str] = typer.Option(None, "--md-file", help="Path to a local .md file with the message content"),
 ):
     """Send the same notification to multiple recipients (by external_id).
 
     With --tts, audio is synthesized once and reused for all WhatsApp jobs.
     """
+    resolved = _resolve_content(content, md_file)
     id_list = []
     if external_ids:
         id_list = [e.strip() for e in external_ids.split(",") if e.strip()]
@@ -319,7 +352,7 @@ def notifications_broadcast(
 
     body: dict = {
         "external_ids": id_list,
-        "content": content,
+        "content": resolved,
         "is_tts": tts,
         "media_urls": media or [],
     }
@@ -524,11 +557,13 @@ def whatsapp_restart():
 @whatsapp_app.command("send-text")
 def whatsapp_send_text(
     phone: str = typer.Argument(help="Phone number (e.g. 5511999999999)"),
-    text: str = typer.Argument(help="Message text (markdown supported)"),
+    text: str = typer.Argument(help="Message text (markdown, .md URL, or use --md-file)"),
+    md_file: Optional[str] = typer.Option(None, "--md-file", help="Path to a local .md file with the message content"),
 ):
     """Send a text message directly to a phone number."""
     from app.services.markdown import md_to_whatsapp
-    wa_text = md_to_whatsapp(text)
+    resolved = _resolve_content(text, md_file)
+    wa_text = md_to_whatsapp(resolved)
     data = _post("/whatsapp/send/text", {"phone": phone, "text": wa_text})
     if _output_json:
         return _json_output(data)
@@ -538,12 +573,13 @@ def whatsapp_send_text(
 @whatsapp_app.command("send-ptt")
 def whatsapp_send_ptt(
     phone: str = typer.Argument(help="Phone number (e.g. 5511999999999)"),
-    text: Optional[str] = typer.Option(None, "--text", "-t", help="Text to synthesize as voice note"),
+    text: Optional[str] = typer.Option(None, "--text", "-t", help="Text to synthesize as voice note (markdown, .md URL)"),
     audio_file: Optional[str] = typer.Option(None, "--audio-file", "-a", help="Path to an OGG/Opus audio file to send as voice note"),
+    md_file: Optional[str] = typer.Option(None, "--md-file", help="Path to a local .md file with the text to synthesize"),
 ):
     """Send a voice note (PTT) to a phone number.
 
-    Provide either --text (TTS synthesis) or --audio-file (pre-existing audio).
+    Provide either --text (TTS synthesis), --md-file, or --audio-file (pre-existing audio).
     """
     audio_b64 = None
     if audio_file:
@@ -554,13 +590,18 @@ def whatsapp_send_ptt(
         except OSError as e:
             rprint(f"[red]Cannot read audio file: {e}[/red]")
             raise typer.Exit(1)
+    resolved_text = None
+    if md_file:
+        resolved_text = _resolve_content("", md_file)
+    elif text:
+        resolved_text = _resolve_content(text, None)
     body = {"phone": phone}
     if audio_b64:
         body["audio_base64"] = audio_b64
-    if text:
-        body["text"] = text
-    if not audio_b64 and not text:
-        rprint("[red]Provide --text or --audio-file[/red]")
+    if resolved_text:
+        body["text"] = resolved_text
+    if not audio_b64 and not resolved_text:
+        rprint("[red]Provide --text, --md-file, or --audio-file[/red]")
         raise typer.Exit(1)
     data = _post("/whatsapp/send/ptt", body)
     if _output_json:
@@ -570,17 +611,19 @@ def whatsapp_send_ptt(
 
 @whatsapp_app.command("broadcast")
 def whatsapp_broadcast(
-    content: str = typer.Argument(help="Message content (markdown supported)"),
+    content: str = typer.Argument(help="Message content (markdown, .md URL, or use --md-file)"),
     tts: bool = typer.Option(False, "--tts", help="Send as voice note (synthesized once for all)"),
     media: Optional[list[str]] = typer.Option(None, "--media", "-m", help="Media URL(s) to attach"),
     phones: Optional[str] = typer.Option(None, "--phones", "-p", help="Comma-separated phone numbers (e.g. 5511999...,5511888...)"),
     phones_file: Optional[str] = typer.Option(None, "--phones-file", "-f", help="File with one phone per line"),
+    md_file: Optional[str] = typer.Option(None, "--md-file", help="Path to a local .md file with the message content"),
 ):
     """Send the same message to multiple phone numbers.
 
     Provide phones via --phones (comma-separated) or --phones-file (one per line).
     With --tts, audio is synthesized once and reused for all recipients.
     """
+    resolved = _resolve_content(content, md_file)
     phone_list = []
     if phones:
         phone_list = [p.strip() for p in phones.split(",") if p.strip()]
@@ -600,7 +643,7 @@ def whatsapp_broadcast(
 
     body = {
         "phones": phone_list,
-        "content": content,
+        "content": resolved,
         "is_tts": tts,
         "media_urls": media or [],
     }
