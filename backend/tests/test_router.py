@@ -7,7 +7,6 @@ from app.services.router import eligible_channels
 def _r(**kw) -> Recipient:
     return Recipient(
         id=uuid.uuid4(),
-        client_id=uuid.uuid4(),
         external_id="x",
         **kw,
     )

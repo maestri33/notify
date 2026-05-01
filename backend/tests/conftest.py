@@ -8,14 +8,15 @@ from app.db import get_session
 from app.main import app
 from app.models import EmailTemplate, ServiceConfig
 from app.models.email_template import DEFAULT_HTML, DEFAULT_SUBJECT
-from app.services.baileys import BaileysError, get_baileys
+from app.services.baileys import get_baileys
 
 
 class FakeBaileys:
-    """Simulates the sidecar being offline — recipient CRUD must keep working."""
+    """Simulates WhatsApp sidecar for tests."""
 
     def validate(self, phone):
-        raise BaileysError("offline")
+        # Return fake existence — JID is already normalized by caller
+        return {"exists": True, "jid": f"{phone}@s.whatsapp.net"}
 
 
 class FakeQueue:

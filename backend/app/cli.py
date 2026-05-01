@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from typing import Optional
 
 import niquests
@@ -117,7 +116,7 @@ def _resolve_content(text: str, md_file: str | None = None) -> str:
 
     Priority:
       1. --md-file (local path)
-      2. text that looks like a URL ending in .md
+      2. text that looks like a URL ending in .md (fetched via shared resolver)
       3. text as-is
     """
     if md_file:
@@ -128,17 +127,8 @@ def _resolve_content(text: str, md_file: str | None = None) -> str:
             rprint(f"[red]Cannot read file: {e}[/red]")
             raise typer.Exit(1)
 
-    t = text.strip()
-    if t.startswith(("http://", "https://")) and t.rsplit("?", 1)[0].endswith(".md"):
-        try:
-            r = niquests.get(t, timeout=30)
-            r.raise_for_status()
-            return r.text
-        except niquests.RequestException as e:
-            rprint(f"[red]Cannot fetch URL: {e}[/red]")
-            raise typer.Exit(1)
-
-    return text
+    from app.services.content_resolver import resolve_remote_content
+    return resolve_remote_content(text)
 
 
 def _json(obj) -> None:
@@ -277,7 +267,7 @@ def recipients_check(
     query: str = typer.Argument(help="Phone number or email to check"),
 ):
     """Check if a phone/email is registered and/or valid on WhatsApp."""
-    data = _get("/recipients/check", q=query)
+    data = _get("/check", phone=query if not "@" in query else None, email=query if "@" in query else None)
     _json(data)
 
 
@@ -670,7 +660,7 @@ app.add_typer(groups_app, name="groups")
 @groups_app.command("list")
 def groups_list():
     """List all WhatsApp groups."""
-    data = _get("/baileys/groups")
+    data = _get("/whatsapp/groups")
     if _output_json:
         return _json_output(data)
     groups = data.get("groups", [])
@@ -686,7 +676,7 @@ def groups_get(
     jid: str = typer.Argument(help="Group JID (e.g. 120363286125215485@g.us)"),
 ):
     """Get full group details including participants."""
-    data = _get(f"/baileys/groups/{jid}")
+    data = _get(f"/whatsapp/groups/{jid}")
     if _output_json:
         return _json_output(data)
     rprint(f"[bold]Subject:[/bold] {data['subject']}")
@@ -708,7 +698,7 @@ def groups_members(
     jid: str = typer.Argument(help="Group JID"),
 ):
     """List members of a WhatsApp group."""
-    data = _get(f"/baileys/groups/{jid}/members")
+    data = _get(f"/whatsapp/groups/{jid}/members")
     if _output_json:
         return _json_output(data)
     rprint(f"[bold]{data['subject']}[/bold] — {len(data['participants'])} members")
@@ -722,7 +712,7 @@ def groups_contacts(
     jid: str = typer.Argument(help="Group JID"),
 ):
     """List group members with contact names."""
-    data = _get(f"/baileys/groups/{jid}/members/contacts")
+    data = _get(f"/whatsapp/groups/{jid}/members/contacts")
     if _output_json:
         return _json_output(data)
     rprint(f"[bold]{data["subject"]}[/bold] — {len(data["participants"])} members")
@@ -737,7 +727,7 @@ def groups_invite(
     jid: str = typer.Argument(help="Group JID"),
 ):
     """Get the invite link for a group."""
-    data = _get(f"/baileys/groups/{jid}/invite")
+    data = _get(f"/whatsapp/groups/{jid}/invite")
     if _output_json:
         return _json_output(data)
     rprint(f"[bold]Invite link:[/bold] [green]{data['invite_link']}[/green]")
@@ -754,7 +744,7 @@ def users_get(
     jid: str = typer.Argument(help="User JID (e.g. 5511999999999@s.whatsapp.net)"),
 ):
     """Get WhatsApp user profile (picture, status, contact)."""
-    data = _get(f"/baileys/users/{jid}")
+    data = _get(f"/whatsapp/users/{jid}")
     _json(data)
 
 

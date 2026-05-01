@@ -1,8 +1,12 @@
 """ElevenLabs TTS — generates OGG/Opus audio suitable for WhatsApp PTT."""
 
+import base64
+
 import niquests
 
 from app.models import ServiceConfig
+from app.services.config_store import load_service_config
+from app.services.markdown import md_to_plain
 
 
 class TTSError(Exception):
@@ -34,3 +38,28 @@ def synthesize(text: str, cfg: ServiceConfig) -> bytes:
     if r.status_code >= 400:
         raise TTSError(f"elevenlabs {r.status_code}: {r.text[:300]}")
     return r.content
+
+
+def synthesize_b64(markdown_content: str, *, strict: bool = False) -> str | None:
+    """Convert markdown to plain text, synthesize as TTS, return base64-encoded audio.
+
+    With strict=False (default), returns None on failure (graceful degradation).
+    With strict=True, raises TTSError or ValueError on failure.
+    """
+    plain = md_to_plain(markdown_content)
+    if not plain:
+        if strict:
+            raise ValueError("content is empty after stripping markdown")
+        return None
+    cfg = load_service_config()
+    try:
+        audio_bytes = synthesize(plain, cfg)
+    except TTSError:
+        if strict:
+            raise
+        return None
+    if not audio_bytes:
+        if strict:
+            raise TTSError("TTS returned empty audio")
+        return None
+    return base64.b64encode(audio_bytes).decode()

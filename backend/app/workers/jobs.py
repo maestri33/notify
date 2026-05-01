@@ -49,7 +49,10 @@ def _run(channel: Channel, log_id: UUID, content: str, media_urls: list[str] | N
             from app.services import senders  # lazy import to avoid import cycles
 
             send_fn = senders.SENDERS[channel]
-            provider_msg_id = send_fn(recipient, notif, content, media_urls or [], audio_base64=audio_base64)
+            kwargs = {}
+            if channel == Channel.whatsapp:
+                kwargs["audio_base64"] = audio_base64
+            provider_msg_id = send_fn(recipient, notif, content, media_urls or [], **kwargs)
         except ChannelNotReady as e:
             notif.status = NotificationStatus.failed
             notif.error_msg = str(e)

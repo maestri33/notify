@@ -14,6 +14,7 @@ from app.api.schemas import (
 )
 from app.db import get_session
 from app.models import Channel, NotificationLog, NotificationStatus, Recipient
+from app.services.content_resolver import resolve_remote_content
 from app.services.router import eligible_channels
 from app.workers.jobs import DISPATCHERS, on_final_failure
 from app.workers.queue import DEFAULT_RETRY, get_queue
@@ -31,6 +32,8 @@ def create_notification(
     ).first()
     if not recipient:
         raise HTTPException(404, "recipient not found for external_id")
+
+    resolved_content = resolve_remote_content(payload.content)
 
     channels = eligible_channels(recipient, forced=payload.channels)
     if not channels:
@@ -62,9 +65,7 @@ def create_notification(
             )
         )
     session.add_all(logs)
-    session.commit()
-    for n in logs:
-        session.refresh(n)
+    session.flush()
 
     for notif in logs:
         dispatcher = DISPATCHERS[notif.channel]
@@ -72,7 +73,7 @@ def create_notification(
         queue.enqueue(
             dispatcher,
             notif.id,
-            payload.content,
+            resolved_content,
             payload.media_urls,
             retry=DEFAULT_RETRY,
             on_failure=on_final_failure,
@@ -82,6 +83,7 @@ def create_notification(
             NotificationJob(channel=notif.channel, log_id=notif.id, status=notif.status)
         )
 
+    session.commit()
     return NotificationCreateResponse(
         notification_id=notification_id,
         recipient_id=recipient.id,
@@ -123,22 +125,13 @@ def broadcast_notifications(
     """
     results: list[BroadcastResult] = []
 
+    resolved_content = resolve_remote_content(payload.content)
+
     # Pre-synthesize TTS audio once (if needed)
     audio_b64 = None
     if payload.is_tts:
-        from app.services.markdown import md_to_plain
-        from app.services.tts import synthesize, TTSError
-        from app.services.config_store import load_service_config
-        plain = md_to_plain(payload.content)
-        if plain:
-            cfg = load_service_config()
-            try:
-                audio_bytes = synthesize(plain, cfg)
-            except TTSError:
-                audio_bytes = None
-            if audio_bytes:
-                import base64 as _b64
-                audio_b64 = _b64.b64encode(audio_bytes).decode()
+        from app.services.tts import synthesize_b64
+        audio_b64 = synthesize_b64(resolved_content)
 
     for ext_id in payload.external_ids:
         recipient = session.exec(
@@ -173,9 +166,7 @@ def broadcast_notifications(
                 )
             )
         session.add_all(logs)
-        session.commit()
-        for n in logs:
-            session.refresh(n)
+        session.flush()
 
         for notif in logs:
             dispatcher = DISPATCHERS[notif.channel]
@@ -197,6 +188,7 @@ def broadcast_notifications(
                 NotificationJob(channel=notif.channel, log_id=notif.id, status=notif.status)
             )
 
+        session.commit()
         results.append(BroadcastResult(
             external_id=ext_id,
             notification_id=notification_id,

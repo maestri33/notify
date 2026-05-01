@@ -52,12 +52,13 @@ class WhatsAppStatus(BaseModel):
 
 # ── Notifications ───────────────────────────────────────────────────────
 
-class CheckResult(BaseModel):
+class CheckOut(BaseModel):
+    """Response for /check — look up a phone/email in recipients or validate externally."""
     found: bool
     external_id: str | None = None
-    recipient: RecipientOut | None = None
-    whatsapp_valid: bool | None = None
-    whatsapp_jid: str | None = None
+    phone: str | None = None
+    email: str | bool | None = None
+    whatsapp: bool | None = None
 
 
 class NotificationCreate(BaseModel):
