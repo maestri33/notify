@@ -14,7 +14,7 @@ from app.services.baileys import BaileysError, get_baileys
 class FakeBaileys:
     """Simulates the sidecar being offline — recipient CRUD must keep working."""
 
-    def validate(self, number):
+    def validate(self, phone):
         raise BaileysError("offline")
 
 

@@ -36,7 +36,7 @@ def _load(session: Session, log_id: UUID) -> tuple[NotificationLog, Recipient]:
     return notif, recipient
 
 
-def _run(channel: Channel, log_id: UUID, content: str, media_urls: list[str] | None) -> None:
+def _run(channel: Channel, log_id: UUID, content: str, media_urls: list[str] | None, audio_base64: str | None = None) -> None:
     with Session(engine) as session:
         notif, recipient = _load(session, log_id)
         notif.status = NotificationStatus.sending
@@ -49,7 +49,7 @@ def _run(channel: Channel, log_id: UUID, content: str, media_urls: list[str] | N
             from app.services import senders  # lazy import to avoid import cycles
 
             send_fn = senders.SENDERS[channel]
-            provider_msg_id = send_fn(recipient, notif, content, media_urls or [])
+            provider_msg_id = send_fn(recipient, notif, content, media_urls or [], audio_base64=audio_base64)
         except ChannelNotReady as e:
             notif.status = NotificationStatus.failed
             notif.error_msg = str(e)
@@ -74,8 +74,8 @@ def _run(channel: Channel, log_id: UUID, content: str, media_urls: list[str] | N
         session.commit()
 
 
-def dispatch_whatsapp(log_id: UUID, content: str, media_urls: list[str] | None = None) -> None:
-    _run(Channel.whatsapp, log_id, content, media_urls)
+def dispatch_whatsapp(log_id: UUID, content: str, media_urls: list[str] | None = None, audio_base64: str | None = None) -> None:
+    _run(Channel.whatsapp, log_id, content, media_urls, audio_base64=audio_base64)
 
 
 def dispatch_sms(log_id: UUID, content: str, media_urls: list[str] | None = None) -> None:

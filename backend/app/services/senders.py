@@ -31,7 +31,7 @@ _jinja = Environment(autoescape=select_autoescape(["html", "xml"]), enable_async
 # ---------- WhatsApp ----------
 
 def send_whatsapp(
-    recipient: Recipient, notif: NotificationLog, content: str, media_urls: list[str]
+    recipient: Recipient, notif: NotificationLog, content: str, media_urls: list[str], audio_base64: str | None = None
 ) -> str:
     if not recipient.whatsapp_jid or not recipient.whatsapp_valid:
         raise ChannelNotReady("whatsapp not available for recipient")
@@ -42,12 +42,15 @@ def send_whatsapp(
     try:
         if notif.is_tts:
             # TTS mode: send voice note (no text caption). Media still attached separately.
-            cfg = load_service_config()
-            plain = md_to_plain(content)
-            if not plain:
-                raise ChannelNotReady("content empty — nothing to synthesize")
-            audio_bytes = synthesize(plain, cfg)
-            audio_b64 = base64.b64encode(audio_bytes).decode()
+            if audio_base64:
+                audio_b64 = audio_base64
+            else:
+                cfg = load_service_config()
+                plain = md_to_plain(content)
+                if not plain:
+                    raise ChannelNotReady("content empty — nothing to synthesize")
+                audio_bytes = synthesize(plain, cfg)
+                audio_b64 = base64.b64encode(audio_bytes).decode()
             msg_id = baileys.send_ptt(jid, audio_b64)
         else:
             wa_text = md_to_whatsapp(content)

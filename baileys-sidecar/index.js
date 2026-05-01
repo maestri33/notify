@@ -237,10 +237,10 @@ app.post("/restart", async (req, res) => {
 });
 
 app.post("/validate", requireConnected, async (req, res) => {
-  const { number } = req.body || {};
-  if (!number) return res.status(422).json({ error: "number required" });
+  const { phone } = req.body || {};
+  if (!phone) return res.status(422).json({ error: "phone required" });
   try {
-    const results = await state.sock.onWhatsApp(number);
+    const results = await state.sock.onWhatsApp(phone);
     const first = results?.[0];
     if (first?.exists) return res.json({ exists: true, jid: first.jid });
     return res.json({ exists: false, jid: null });
@@ -301,6 +301,126 @@ app.post("/send/ptt", requireConnected, async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── Send by phone (auto-resolve JID) ────────────────────────────────────────
+
+async function resolvePhone(phone) {
+  const cleaned = String(phone).replace(/\D/g, "");
+  const results = await state.sock.onWhatsApp(`${cleaned}@s.whatsapp.net`);
+  const first = results?.[0];
+  if (!first?.exists) return null;
+  return first.jid;
+}
+
+app.post("/send/text/phone", requireConnected, async (req, res) => {
+  const { phone, text } = req.body || {};
+  if (!phone) return res.status(422).json({ error: "phone required" });
+  if (!text) return res.status(422).json({ error: "text required" });
+  try {
+    const jid = await resolvePhone(phone);
+    if (!jid) return res.status(404).json({ error: "phone not on WhatsApp" });
+    const r = await state.sock.sendMessage(jid, { text });
+    res.json({ message_id: r.key.id, jid });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/send/media/phone", requireConnected, async (req, res) => {
+  const { phone, url, base64, caption, mimetype } = req.body || {};
+  if (!phone) return res.status(422).json({ error: "phone required" });
+  if (!url && !base64) return res.status(422).json({ error: "url or base64 required" });
+  try {
+    const jid = await resolvePhone(phone);
+    if (!jid) return res.status(404).json({ error: "phone not on WhatsApp" });
+    const buffer = base64 ? Buffer.from(base64, "base64") : undefined;
+    const source = buffer ? { buffer } : { url };
+    const mt = mimetype || "application/octet-stream";
+    let content;
+    if (mt.startsWith("image/"))
+      content = { image: source.buffer ?? { url: source.url }, caption };
+    else if (mt.startsWith("video/"))
+      content = { video: source.buffer ?? { url: source.url }, caption };
+    else if (mt.startsWith("audio/"))
+      content = { audio: source.buffer ?? { url: source.url }, mimetype: mt };
+    else
+      content = { document: source.buffer ?? { url: source.url }, mimetype: mt, caption };
+    const r = await state.sock.sendMessage(jid, content);
+    res.json({ message_id: r.key.id, jid });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/send/ptt/phone", requireConnected, async (req, res) => {
+  const { phone, audio_base64 } = req.body || {};
+  if (!phone) return res.status(422).json({ error: "phone required" });
+  if (!audio_base64) return res.status(422).json({ error: "audio_base64 required" });
+  try {
+    const jid = await resolvePhone(phone);
+    if (!jid) return res.status(404).json({ error: "phone not on WhatsApp" });
+    const buffer = Buffer.from(audio_base64, "base64");
+    const r = await state.sock.sendMessage(jid, {
+      audio: buffer,
+      ptt: true,
+      mimetype: "audio/ogg; codecs=opus",
+    });
+    res.json({ message_id: r.key.id, jid });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Broadcast (same message to multiple phones) ─────────────────────────────
+
+app.post("/send/text/broadcast", requireConnected, async (req, res) => {
+  const { phones, text } = req.body || {};
+  if (!phones || !Array.isArray(phones) || !phones.length)
+    return res.status(422).json({ error: "phones array required" });
+  if (!text) return res.status(422).json({ error: "text required" });
+  const results = [];
+  for (const phone of phones) {
+    try {
+      const jid = await resolvePhone(phone);
+      if (!jid) {
+        results.push({ phone, status: "not_found" });
+        continue;
+      }
+      const r = await state.sock.sendMessage(jid, { text });
+      results.push({ phone, jid, status: "sent", message_id: r.key.id });
+    } catch (e) {
+      results.push({ phone, status: "error", error: e.message });
+    }
+  }
+  res.json({ results });
+});
+
+app.post("/send/ptt/broadcast", requireConnected, async (req, res) => {
+  const { phones, audio_base64 } = req.body || {};
+  if (!phones || !Array.isArray(phones) || !phones.length)
+    return res.status(422).json({ error: "phones array required" });
+  if (!audio_base64) return res.status(422).json({ error: "audio_base64 required" });
+  const buffer = Buffer.from(audio_base64, "base64");
+  const results = [];
+  for (const phone of phones) {
+    try {
+      const jid = await resolvePhone(phone);
+      if (!jid) {
+        results.push({ phone, status: "not_found" });
+        continue;
+      }
+      const r = await state.sock.sendMessage(jid, {
+        audio: buffer,
+        ptt: true,
+        mimetype: "audio/ogg; codecs=opus",
+      });
+      results.push({ phone, jid, status: "sent", message_id: r.key.id });
+    } catch (e) {
+      results.push({ phone, status: "error", error: e.message });
+    }
+  }
+  res.json({ results });
 });
 
 // ── Contacts API ────────────────────────────────────────────────────────────

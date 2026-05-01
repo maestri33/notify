@@ -73,8 +73,8 @@ def test_validation_marks_valid_when_sidecar_confirms(client):
     from app.services.baileys import get_baileys
 
     class Ok:
-        def validate(self, number):
-            return {"exists": True, "jid": f"55{number[2:]}@s.whatsapp.net"}
+        def validate(self, phone):
+            return {"exists": True, "jid": f"55{phone[2:]}@s.whatsapp.net"}
 
     app.dependency_overrides[get_baileys] = lambda: Ok()
     try:

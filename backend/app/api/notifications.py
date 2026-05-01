@@ -3,6 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.api.schemas import (
@@ -87,6 +88,123 @@ def create_notification(
         jobs=jobs,
         skipped=skipped,
     )
+
+
+# ---------- Broadcast (system-wide, by external_id) ----------
+
+class BroadcastCreate(BaseModel):
+    external_ids: list[str]
+    content: str
+    is_tts: bool = False
+    media_urls: list[str] = []
+    channels: list[Channel] | None = None
+
+
+class BroadcastResult(BaseModel):
+    external_id: str
+    notification_id: UUID | None = None
+    recipient_id: UUID | None = None
+    jobs: list[NotificationJob] = []
+    error: str | None = None
+
+
+class BroadcastResponse(BaseModel):
+    results: list[BroadcastResult]
+
+
+@router.post("/broadcast", response_model=BroadcastResponse)
+def broadcast_notifications(
+    payload: BroadcastCreate,
+    session: Session = Depends(get_session),
+) -> BroadcastResponse:
+    """Send the same notification to multiple recipients (by external_id).
+
+    If `is_tts=True`, audio is synthesized once and reused for all WhatsApp jobs.
+    """
+    results: list[BroadcastResult] = []
+
+    # Pre-synthesize TTS audio once (if needed)
+    audio_b64 = None
+    if payload.is_tts:
+        from app.services.markdown import md_to_plain
+        from app.services.tts import synthesize, TTSError
+        from app.services.config_store import load_service_config
+        plain = md_to_plain(payload.content)
+        if plain:
+            cfg = load_service_config()
+            try:
+                audio_bytes = synthesize(plain, cfg)
+            except TTSError:
+                audio_bytes = None
+            if audio_bytes:
+                import base64 as _b64
+                audio_b64 = _b64.b64encode(audio_bytes).decode()
+
+    for ext_id in payload.external_ids:
+        recipient = session.exec(
+            select(Recipient).where(Recipient.external_id == ext_id)
+        ).first()
+        if not recipient:
+            results.append(BroadcastResult(
+                external_id=ext_id, error="recipient not found"
+            ))
+            continue
+
+        channels = eligible_channels(recipient, forced=payload.channels)
+        if not channels:
+            results.append(BroadcastResult(
+                external_id=ext_id, recipient_id=recipient.id,
+                error="no eligible channels"
+            ))
+            continue
+
+        notification_id = uuid.uuid4()
+        jobs: list[NotificationJob] = []
+
+        logs: list[NotificationLog] = []
+        for ch in channels:
+            logs.append(
+                NotificationLog(
+                    notification_id=notification_id,
+                    recipient_id=recipient.id,
+                    channel=ch,
+                    status=NotificationStatus.queued,
+                    is_tts=payload.is_tts and ch == Channel.whatsapp,
+                )
+            )
+        session.add_all(logs)
+        session.commit()
+        for n in logs:
+            session.refresh(n)
+
+        for notif in logs:
+            dispatcher = DISPATCHERS[notif.channel]
+            queue = get_queue(notif.channel)
+            kwargs = {}
+            if notif.is_tts and audio_b64:
+                kwargs["audio_base64"] = audio_b64
+            queue.enqueue(
+                dispatcher,
+                notif.id,
+                payload.content,
+                payload.media_urls,
+                retry=DEFAULT_RETRY,
+                on_failure=on_final_failure,
+                job_timeout=300,
+                **kwargs,
+            )
+            jobs.append(
+                NotificationJob(channel=notif.channel, log_id=notif.id, status=notif.status)
+            )
+
+        results.append(BroadcastResult(
+            external_id=ext_id,
+            notification_id=notification_id,
+            recipient_id=recipient.id,
+            jobs=jobs,
+        ))
+
+    return BroadcastResponse(results=results)
 
 
 @router.get("", response_model=list[NotificationLogOut])

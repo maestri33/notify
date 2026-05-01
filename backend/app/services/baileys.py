@@ -52,12 +52,16 @@ class BaileysClient:
 
     # ── Send ─────────────────────────────────────────────────────────────
 
-    def validate(self, number: str) -> dict[str, Any]:
+    def validate(self, phone: str) -> dict[str, Any]:
         """Returns {'exists': bool, 'jid': str|None}."""
-        return self._request("POST", "/validate", json={"number": number})
+        return self._request("POST", "/validate", json={"phone": phone})
 
     def send_text(self, jid: str, text: str) -> str:
         return self._request("POST", "/send/text", json={"jid": jid, "text": text})["message_id"]
+
+    def send_text_phone(self, phone: str, text: str) -> dict[str, Any]:
+        """Send text to a phone number. Returns {'message_id', 'jid'}."""
+        return self._request("POST", "/send/text/phone", json={"phone": phone, "text": text})
 
     def send_media(
         self,
@@ -77,10 +81,48 @@ class BaileysClient:
             payload["caption"] = caption
         return self._request("POST", "/send/media", json=payload)["message_id"]
 
+    def send_media_phone(
+        self,
+        phone: str,
+        *,
+        url: str | None = None,
+        base64: str | None = None,
+        mimetype: str,
+        caption: str | None = None,
+    ) -> dict[str, Any]:
+        """Send media to a phone number. Returns {'message_id', 'jid'}."""
+        payload: dict[str, Any] = {"phone": phone, "mimetype": mimetype}
+        if url:
+            payload["url"] = url
+        if base64:
+            payload["base64"] = base64
+        if caption:
+            payload["caption"] = caption
+        return self._request("POST", "/send/media/phone", json=payload)
+
     def send_ptt(self, jid: str, audio_base64: str) -> str:
         return self._request(
             "POST", "/send/ptt", json={"jid": jid, "audio_base64": audio_base64}
         )["message_id"]
+
+    def send_ptt_phone(self, phone: str, audio_base64: str) -> dict[str, Any]:
+        """Send PTT to a phone number. Returns {'message_id', 'jid'}."""
+        return self._request(
+            "POST", "/send/ptt/phone", json={"phone": phone, "audio_base64": audio_base64}
+        )
+
+    # ── Broadcast ──────────────────────────────────────────────────────────
+
+    def broadcast_text(self, phones: list[str], text: str) -> dict[str, Any]:
+        """Send the same text to multiple phones. Returns {'results': [...]}."""
+        return self._request("POST", "/send/text/broadcast", json={"phones": phones, "text": text})
+
+    def broadcast_ptt(self, phones: list[str], audio_base64: str) -> dict[str, Any]:
+        """Send the same PTT to multiple phones. Returns {'results': [...]}."""
+        return self._request(
+            "POST", "/send/ptt/broadcast",
+            json={"phones": phones, "audio_base64": audio_base64},
+        )
 
     # ── Groups ───────────────────────────────────────────────────────────
 

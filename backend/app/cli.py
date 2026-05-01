@@ -287,6 +287,61 @@ def notifications_send(
         rprint(f"[yellow]skipped:[/yellow] {result['skipped']}")
 
 
+@notifications_app.command("broadcast")
+def notifications_broadcast(
+    content: str = typer.Argument(help="Message content (markdown supported)"),
+    tts: bool = typer.Option(False, "--tts", help="Generate voice note for WhatsApp (once for all)"),
+    channel: Optional[list[str]] = typer.Option(None, "--channel", "-c", help="Force specific channel(s): whatsapp | sms | email"),
+    media: Optional[list[str]] = typer.Option(None, "--media", "-m", help="Media URL(s) to attach"),
+    external_ids: Optional[str] = typer.Option(None, "--ids", help="Comma-separated external_ids"),
+    ids_file: Optional[str] = typer.Option(None, "--ids-file", "-f", help="File with one external_id per line"),
+):
+    """Send the same notification to multiple recipients (by external_id).
+
+    With --tts, audio is synthesized once and reused for all WhatsApp jobs.
+    """
+    id_list = []
+    if external_ids:
+        id_list = [e.strip() for e in external_ids.split(",") if e.strip()]
+    if ids_file:
+        try:
+            with open(ids_file) as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        id_list.append(line)
+        except OSError as e:
+            rprint(f"[red]Cannot read file: {e}[/red]")
+            raise typer.Exit(1)
+    if not id_list:
+        rprint("[red]Provide --ids or --ids-file[/red]")
+        raise typer.Exit(1)
+
+    body: dict = {
+        "external_ids": id_list,
+        "content": content,
+        "is_tts": tts,
+        "media_urls": media or [],
+    }
+    if channel:
+        body["channels"] = channel
+    data = _post("/notifications/broadcast", body)
+    if _output_json:
+        return _json_output(data)
+
+    ok = 0
+    err = 0
+    for r in data["results"]:
+        if r["error"]:
+            rprint(f"[red]✗[/red] {r['external_id']}: {r['error']}")
+            err += 1
+        else:
+            channels_used = [j["channel"] for j in r["jobs"]]
+            rprint(f"[green]✓[/green] {r['external_id']} → {', '.join(channels_used)} ({r['notification_id']})")
+            ok += 1
+    rprint(f"\n[green]{ok} ok[/green]  [red]{err} failed[/red]  out of {len(data['results'])}")
+
+
 @notifications_app.command("logs")
 def notifications_logs(
     external_id: Optional[str] = typer.Option(None, "--recipient", "-r"),
@@ -441,10 +496,10 @@ def whatsapp_qr(
 
 @whatsapp_app.command("validate")
 def whatsapp_validate(
-    number: str = typer.Argument(help="Phone number to validate on WhatsApp (e.g. 5511999999999)"),
+    phone: str = typer.Argument(help="Phone number to validate on WhatsApp (e.g. 5511999999999)"),
 ):
     """Check if a phone number is registered on WhatsApp."""
-    data = _post("/whatsapp/validate", {"number": number})
+    data = _post("/whatsapp/validate", {"phone": phone})
     _json(data)
 
 
@@ -464,6 +519,103 @@ def whatsapp_restart():
     """Restart the Baileys sidecar."""
     _post("/whatsapp/restart", {})
     rprint("[green]Baileys restarted.[/green]")
+
+
+@whatsapp_app.command("send-text")
+def whatsapp_send_text(
+    phone: str = typer.Argument(help="Phone number (e.g. 5511999999999)"),
+    text: str = typer.Argument(help="Message text (markdown supported)"),
+):
+    """Send a text message directly to a phone number."""
+    from app.services.markdown import md_to_whatsapp
+    wa_text = md_to_whatsapp(text)
+    data = _post("/whatsapp/send/text", {"phone": phone, "text": wa_text})
+    if _output_json:
+        return _json_output(data)
+    rprint(f"[green]Sent![/green] message_id={data['message_id']} jid={data['jid']}")
+
+
+@whatsapp_app.command("send-ptt")
+def whatsapp_send_ptt(
+    phone: str = typer.Argument(help="Phone number (e.g. 5511999999999)"),
+    text: Optional[str] = typer.Option(None, "--text", "-t", help="Text to synthesize as voice note"),
+    audio_file: Optional[str] = typer.Option(None, "--audio-file", "-a", help="Path to an OGG/Opus audio file to send as voice note"),
+):
+    """Send a voice note (PTT) to a phone number.
+
+    Provide either --text (TTS synthesis) or --audio-file (pre-existing audio).
+    """
+    audio_b64 = None
+    if audio_file:
+        import base64
+        try:
+            with open(audio_file, "rb") as f:
+                audio_b64 = base64.b64encode(f.read()).decode()
+        except OSError as e:
+            rprint(f"[red]Cannot read audio file: {e}[/red]")
+            raise typer.Exit(1)
+    body = {"phone": phone}
+    if audio_b64:
+        body["audio_base64"] = audio_b64
+    if text:
+        body["text"] = text
+    if not audio_b64 and not text:
+        rprint("[red]Provide --text or --audio-file[/red]")
+        raise typer.Exit(1)
+    data = _post("/whatsapp/send/ptt", body)
+    if _output_json:
+        return _json_output(data)
+    rprint(f"[green]PTT sent![/green] message_id={data['message_id']} jid={data['jid']}")
+
+
+@whatsapp_app.command("broadcast")
+def whatsapp_broadcast(
+    content: str = typer.Argument(help="Message content (markdown supported)"),
+    tts: bool = typer.Option(False, "--tts", help="Send as voice note (synthesized once for all)"),
+    media: Optional[list[str]] = typer.Option(None, "--media", "-m", help="Media URL(s) to attach"),
+    phones: Optional[str] = typer.Option(None, "--phones", "-p", help="Comma-separated phone numbers (e.g. 5511999...,5511888...)"),
+    phones_file: Optional[str] = typer.Option(None, "--phones-file", "-f", help="File with one phone per line"),
+):
+    """Send the same message to multiple phone numbers.
+
+    Provide phones via --phones (comma-separated) or --phones-file (one per line).
+    With --tts, audio is synthesized once and reused for all recipients.
+    """
+    phone_list = []
+    if phones:
+        phone_list = [p.strip() for p in phones.split(",") if p.strip()]
+    if phones_file:
+        try:
+            with open(phones_file) as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        phone_list.append(line)
+        except OSError as e:
+            rprint(f"[red]Cannot read file: {e}[/red]")
+            raise typer.Exit(1)
+    if not phone_list:
+        rprint("[red]Provide --phones or --phones-file[/red]")
+        raise typer.Exit(1)
+
+    body = {
+        "phones": phone_list,
+        "content": content,
+        "is_tts": tts,
+        "media_urls": media or [],
+    }
+    data = _post("/whatsapp/broadcast", body)
+    if _output_json:
+        return _json_output(data)
+
+    sent = sum(1 for r in data["results"] if r["status"] == "sent")
+    failed = len(data["results"]) - sent
+    t = Table("phone", "status", "message_id", "error")
+    for r in data["results"]:
+        err = (r.get("error") or "")[:40]
+        t.add_row(r["phone"], r["status"], r.get("message_id") or "—", err)
+    console.print(t)
+    rprint(f"[green]{sent} sent[/green]  [red]{failed} failed[/red]  out of {len(data['results'])}")
 
 
 # ── groups ────────────────────────────────────────────────────────────────────
