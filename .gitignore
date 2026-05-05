@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# uv
+uv.lock
+
+# env / segredos
+.env
+.env.*
+!.env.example
+
+# banco local
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code — sessoes locais (memoria persistida fica versionada, sessao nao)
+.claude/sessions/
+.claude/projects/

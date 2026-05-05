@@ -1,0 +1,12 @@
+{
+  "$comment": "MCPs habilitados neste serviço. Context7 dá ao Claude Code acesso a docs reais e atualizadas das libs (FastAPI, Tortoise, httpx, etc) — use SEMPRE que precisar de assinatura ou exemplo de uso pra evitar alucinação.",
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "env": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      }
+    }
+  }
+}

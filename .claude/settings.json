@@ -1,0 +1,35 @@
+     1|{
+     2|  "$comment": "Configuração do Claude Code exclusivo deste serviço. Modelo: DeepSeek v4 Pro via proxy compatível com a API Anthropic (ex.: claude-code-router, litellm). Defina ANTHROPIC_BASE_URL e ANTHROPIC_AUTH_TOKEN no shell antes de iniciar o claude.",
+     3|  "model": "deepseek-v4-pro",
+     4|  "env": {
+     5|    "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-http://proxy.local:8787}",
+     6|    "ANTHROPIC_AUTH_TOKEN": "${ANTHROPIC_AUTH_TOKEN}",
+     7|    "ANTHROPIC_MODEL": "deepseek-v4-pro",
+     8|    "ANTHROPIC_SMALL_FAST_MODEL": "deepseek-v4-pro"
+     9|  },
+    10|  "permissions": {
+    11|    "allow": [
+    12|      "Bash(uv *)",
+    13|      "Bash(make *)",
+    14|      "Bash(pytest *)",
+    15|      "Bash(aerich *)",
+    16|      "Bash(curl http://localhost:80/*)",
+    17|      "Bash(curl http://127.0.0.1:80/*)",
+    18|      "Read(./**)",
+    19|      "Edit(./app/**)",
+    20|      "Edit(./tests/**)",
+    21|      "Edit(./.claude/memory/**)",
+    22|      "Write(./app/**)",
+    23|      "Write(./tests/**)",
+    24|      "Write(./.claude/memory/**)"
+    25|    ],
+    26|    "deny": [
+    27|      "Bash(rm -rf *)",
+    28|      "Bash(sudo *)",
+    29|      "Edit(./pyproject.toml)",
+    30|      "Edit(./.env)",
+    31|      "Edit(./.claude/CLAUDE.md)"
+    32|    ]
+    33|  }
+    34|}
+    35|
