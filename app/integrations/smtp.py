@@ -1,17 +1,16 @@
 """
 Cliente para a API de mail merge (envio de e-mails em massa via CSV).
 
-API alvo: 10.10.10.150 (configurado em Settings.smtp_api_base_url).
+API alvo: Settings.smtp_api_base_url.
 
 Fluxos:
     - Em massa: configure_smtp() -> preview_csv() -> send_emails()
     - Unitario: send_single_email() — gera CSV temporario internamente
 """
 
+import tempfile
 from pathlib import Path
 from typing import Any
-
-import tempfile
 
 import anyio
 import httpx

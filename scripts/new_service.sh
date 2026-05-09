@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# new_service.sh — clona este template para um servico novo.
+# new_service.sh — clona o notify (este servico) como template para um servico novo.
 #
 # Uso:
 #   ./scripts/new_service.sh <nome-do-servico> [destino]
@@ -28,35 +28,28 @@ echo "==> Copiando $src -> $dst"
 mkdir -p "$dst"
 # copia tudo menos venv, caches, banco local e sessoes do claude
 rsync -a \
-  --exclude '.venv' \
-  --exclude '__pycache__' \
-  --exclude '.pytest_cache' \
-  --exclude '.mypy_cache' \
-  --exclude '.ruff_cache' \
-  --exclude 'data' \
-  --exclude '*.db' \
-  --exclude '.claude/sessions' \
-  --exclude '.claude/projects' \
+  --exclude='.venv' \
+  --exclude='__pycache__' \
+  --exclude='.pytest_cache' \
+  --exclude='.mypy_cache' \
+  --exclude='.ruff_cache' \
+  --exclude='data' \
+  --exclude='*.db' \
+  --exclude='.claude/sessions' \
+  --exclude='.claude/projects' \
   "$src/" "$dst/"
 
-echo "==> Substituindo nome 'microservice-template' -> '$name'"
-# tenta gsed (mac) primeiro, depois sed -i
-SED_INPLACE=(sed -i)
-if command -v gsed >/dev/null 2>&1; then
-  SED_INPLACE=(gsed -i)
-elif sed --version >/dev/null 2>&1; then
-  SED_INPLACE=(sed -i)
-else
-  SED_INPLACE=(sed -i '')
-fi
-
-grep -rl "microservice-template" "$dst" \
-  --exclude-dir=.git \
-  --exclude-dir=.venv \
-  --exclude-dir=__pycache__ \
-  | while read -r f; do
-    "${SED_INPLACE[@]}" "s/microservice-template/$name/g" "$f"
-  done
+echo "==> Substituindo nome 'notify' -> '$name'"
+# Substitui nos arquivos de config, README, e CLAUDE.md
+for f in \
+  "$dst/.env.example" \
+  "$dst/README.md" \
+  "$dst/.claude/CLAUDE.md" \
+  "$dst/pyproject.toml" \
+  "$dst/Makefile" \
+  "$dst/API.md" 2>/dev/null; do
+  [[ -f "$f" ]] && sed -i "s/notify/$name/g" "$f"
+done
 
 echo "==> Pronto."
 echo "    cd $dst"

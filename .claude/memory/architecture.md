@@ -27,6 +27,16 @@
 
 ## Histórico de decisões
 
+### 2026-05-09 — Unificacao: clientes em `app/integrations/`
+- **Decisão:** clientes para APIs externas (SMTP, WhatsApp, DeepSeek,
+  ElevenLabs, Gemini) movidos de `app/services/clients/` para
+  `app/integrations/`.
+- **Por quê:** `integrations/` ja e "tudo que sai pra fora deste servico".
+  Ter duas pastas (`clients/` + `integrations/`) era redundante.
+  Simplificacao: uma unica pasta para toda comunicacao externa.
+- **Consequência:** `app/services/clients/` foi removida. Toda nova API
+  externa vai direto em `app/integrations/<nome>.py`.
+
 ### 2026-05-02 — Bootstrap inicial
 - **Decisão:** SQLite como default no template, Postgres opcional via
   `DATABASE_URL`.

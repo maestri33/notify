@@ -16,13 +16,10 @@ import httpx
 
 from app.config import get_settings
 from app.exceptions import IntegrationError
+from app.integrations.http_client import request_with_retry
 from app.utils.logging import get_logger
 
 log = get_logger(__name__)
-
-BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-IMAGE_MODEL = "gemini-3.1-flash-image-preview"
-VISION_MODEL = "gemini-3-flash-preview"
 
 
 class GeminiClient:
@@ -32,6 +29,15 @@ class GeminiClient:
         settings = get_settings()
         self._client = client
         self._api_key = settings.gemini_api_key
+        self._base_url: str = settings.gemini_base_url
+        self._image_model: str = settings.gemini_image_model
+        self._vision_model: str = settings.gemini_vision_model
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "x-goog-api-key": self._api_key,
+            "Content-Type": "application/json",
+        }
 
     async def generate_image(
         self,
@@ -71,13 +77,12 @@ class GeminiClient:
             "generationConfig": {"responseModalities": ["IMAGE"]},
         }
 
-        resp = await self._client.post(
-            f"{BASE_URL}/{IMAGE_MODEL}:generateContent",
-            headers={
-                "x-goog-api-key": self._api_key,
-                "Content-Type": "application/json",
-            },
+        resp = await request_with_retry(
+            self._client,
+            "POST",
+            f"{self._base_url}/{self._image_model}:generateContent",
             json=payload,
+            headers=self._headers(),
             timeout=120.0,
         )
 
@@ -118,12 +123,12 @@ class GeminiClient:
         }
         ext = ext_map.get(mime, ".png")
         filename = f"{uuid.uuid4().hex}{ext}"
-        out = Path("data/public/media")
+        out = Path("media/imagem")
         out.mkdir(parents=True, exist_ok=True)
         path = out / filename
         path.write_bytes(raw)
-        relative = f"media/{filename}"
-        log.info("gemini.image_saved", mime=mime, size=len(raw), relative=relative)
+        relative = f"imagem/{filename}"
+        log.info("gemini.image_saved", mime=mime, size=len(raw), filename=relative)
         return relative
 
     # ------------------------------------------------------------------
@@ -166,13 +171,12 @@ class GeminiClient:
             }],
         }
 
-        resp = await self._client.post(
-            f"{BASE_URL}/{VISION_MODEL}:generateContent",
-            headers={
-                "x-goog-api-key": self._api_key,
-                "Content-Type": "application/json",
-            },
+        resp = await request_with_retry(
+            self._client,
+            "POST",
+            f"{self._base_url}/{self._vision_model}:generateContent",
             json=payload,
+            headers=self._headers(),
             timeout=60.0,
         )
 

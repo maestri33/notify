@@ -23,7 +23,7 @@
 ### Mail Merge API (SMTP)
 - **Tipo:** HTTP
 - **Base URL:** `http://10.10.10.150`
-- **Cliente:** `app/services/clients/smtp.py` → `SMTPClient`
+- **Cliente:** `app/integrations/smtp.py` → `SMTPClient`
 - **Endpoints usados:**
   - `GET /vercel` — health check, retorna `{"message":"FastAPI is running on Vercel!"}`
   - `POST /configure_smtp` — configura SMTP em memória (form-encoded: `smtpHost`, `smtpPort`, `smtpUser`, `smtpPass`)
@@ -40,7 +40,7 @@
 ### Evolution GO (WhatsApp API v2)
 - **Tipo:** HTTP
 - **Base URL:** `http://10.10.10.149`
-- **Cliente:** `app/services/clients/whatsapp.py` → `WhatsAppClient`
+- **Cliente:** `app/integrations/whatsapp.py` → `WhatsAppClient`
 - **Instância ativa:** "default" — `5511920062177` (Supletivo BR)
 - **Auth:** header `apikey` = `Settings.whatsapp_global_api_key` (`7A3F8C2B...`)
 - **Instance:** default "default", sobreponível via `WhatsAppClient(http, instance="...")`

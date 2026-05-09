@@ -32,3 +32,4 @@ logs/
 # Claude Code — sessoes locais (memoria persistida fica versionada, sessao nao)
 .claude/sessions/
 .claude/projects/
+media/*

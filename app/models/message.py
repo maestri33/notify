@@ -1,14 +1,20 @@
 from tortoise import fields
 from tortoise.models import Model
 
+# Status validos para envio de mensagens
+STATUS_PENDING = "pending"
+STATUS_SENT = "sent"
+STATUS_FAILED = "failed"
+STATUS_SKIPPED = "skipped"  # email quando contacto nao tem email
+
 
 class Message(Model):
     id = fields.IntField(primary_key=True)
     contact = fields.ForeignKeyField("models.Contact", related_name="messages")
     type = fields.CharField(max_length=20)  # text, audio, media
     content_text = fields.TextField(null=True)
-    whatsapp_status = fields.CharField(max_length=20, default="pending")
-    email_status = fields.CharField(max_length=20, default="pending")
+    whatsapp_status = fields.CharField(max_length=20, default=STATUS_PENDING)
+    email_status = fields.CharField(max_length=20, default=STATUS_PENDING)
     email_subject = fields.CharField(max_length=255, null=True)
     tts_audio_url = fields.CharField(max_length=500, null=True)
     created_at = fields.DatetimeField(auto_now_add=True)

@@ -1,35 +1,37 @@
-     1|{
-     2|  "$comment": "Configuração do Claude Code exclusivo deste serviço. Modelo: DeepSeek v4 Pro via proxy compatível com a API Anthropic (ex.: claude-code-router, litellm). Defina ANTHROPIC_BASE_URL e ANTHROPIC_AUTH_TOKEN no shell antes de iniciar o claude.",
-     3|  "model": "deepseek-v4-pro",
-     4|  "env": {
-     5|    "ANTHROPIC_BASE_URL": "${ANTHROPIC_BASE_URL:-http://proxy.local:8787}",
-     6|    "ANTHROPIC_AUTH_TOKEN": "${ANTHROPIC_AUTH_TOKEN}",
-     7|    "ANTHROPIC_MODEL": "deepseek-v4-pro",
-     8|    "ANTHROPIC_SMALL_FAST_MODEL": "deepseek-v4-pro"
-     9|  },
-    10|  "permissions": {
-    11|    "allow": [
-    12|      "Bash(uv *)",
-    13|      "Bash(make *)",
-    14|      "Bash(pytest *)",
-    15|      "Bash(aerich *)",
-    16|      "Bash(curl http://localhost:80/*)",
-    17|      "Bash(curl http://127.0.0.1:80/*)",
-    18|      "Read(./**)",
-    19|      "Edit(./app/**)",
-    20|      "Edit(./tests/**)",
-    21|      "Edit(./.claude/memory/**)",
-    22|      "Write(./app/**)",
-    23|      "Write(./tests/**)",
-    24|      "Write(./.claude/memory/**)"
-    25|    ],
-    26|    "deny": [
-    27|      "Bash(rm -rf *)",
-    28|      "Bash(sudo *)",
-    29|      "Edit(./pyproject.toml)",
-    30|      "Edit(./.env)",
-    31|      "Edit(./.claude/CLAUDE.md)"
-    32|    ]
-    33|  }
-    34|}
-    35|
+{
+  "$comment": "Claude Code via DeepSeek (endpoint compatível Anthropic). Tokens reais idealmente exportados no shell — manter aqui apenas como fallback.",
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "sk-9960f608efe84ed48bd8cf0e797f9eec",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-pro",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-v4-pro",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(uv *)",
+      "Bash(make *)",
+      "Bash(pytest *)",
+      "Bash(aerich *)",
+      "Bash(curl http://localhost:80/*)",
+      "Bash(curl http://127.0.0.1:80/*)",
+      "Read(./**)",
+      "Edit(./app/**)",
+      "Edit(./tests/**)",
+      "Edit(./.claude/memory/**)",
+      "Write(./app/**)",
+      "Write(./tests/**)",
+      "Write(./.claude/memory/**)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(sudo *)",
+      "Edit(./pyproject.toml)",
+      "Edit(./.env)",
+      "Edit(./.claude/CLAUDE.md)"
+    ]
+  }
+}

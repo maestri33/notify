@@ -5,8 +5,8 @@ Stack: **FastAPI + Tortoise ORM + Uvicorn + uv**, com **Claude Code ja configura
 por dentro (memoria, regras, Context7, DeepSeek v4 Pro).
 
 Dispara notificacoes via dois canais:
-- **E-mail em massa** — Mail Merge API (`app/services/clients/smtp.py`), CSV + Jinja2.
-- **WhatsApp** — Evolution GO / whatsmeow (`app/services/clients/whatsapp.py`), texto, midia, sticker.
+- **E-mail em massa** — Mail Merge API (`app/integrations/smtp.py`), CSV + Jinja2.
+- **WhatsApp** — Evolution GO / whatsmeow (`app/integrations/whatsapp.py`), texto, midia, sticker.
 
 > **Filosofia.** Cada microservico deve ser **generico, reutilizavel, simples e
 > completo**. Cada servico tem o **seu proprio Claude Code** (com memoria propria),
@@ -28,13 +28,11 @@ Dispara notificacoes via dois canais:
 │   ├── api/                  # routers HTTP (1 arquivo por feature)
 │   ├── models/               # modelos Tortoise
 │   ├── schemas/              # Pydantic request/response
-│   ├── services/             # regras de negocio
-│   │   └── clients/          # clientes para APIs externas (SMTP, WhatsApp)
-│   ├── integrations/         # httpx, redis, rabbitmq, webhooks
+│   ├── integrations/         # httpx, redis, rabbitmq, webhooks + clientes API externa
 │   ├── workers/              # consumers de fila
 │   └── utils/                # logging estruturado (structlog)
 ├── tests/
-├── scripts/
+├── scripts/                  # dev.sh (rodar local), new_service.sh (clonar template)
 ├── pyproject.toml
 ├── Makefile
 └── .env.example
@@ -119,8 +117,8 @@ DATABASE_URL=postgres://user:pass@db.proxmox.local:5432/notify
 | `app/integrations/redis_client.py` | Cache + pub/sub leve                     |
 | `app/integrations/messaging.py`   | RabbitMQ (eventos entre servicos)        |
 | `app/integrations/webhooks.py`    | Receber e enviar webhooks                |
-| `app/services/clients/smtp.py`    | Mail Merge API — e-mail em massa (CSV)   |
-| `app/services/clients/whatsapp.py` | Evolution GO — WhatsApp (texto, midia)  |
+| `app/integrations/smtp.py`    | Mail Merge API — e-mail em massa (CSV)   |
+| `app/integrations/whatsapp.py` | Evolution GO — WhatsApp (texto, midia)  |
 | `app/workers/`                    | Consumers de fila / jobs em background   |
 
 Detalhes de cada integracao (endpoints, auth, retry) estao em

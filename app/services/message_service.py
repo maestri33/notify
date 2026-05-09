@@ -21,12 +21,18 @@ from urllib.parse import urlparse
 import httpx
 
 from app.config import get_settings
-from app.models.message import Message
+from app.integrations.deepseek import DeepSeekClient
+from app.integrations.elevenlabs import ElevenLabsClient
+from app.integrations.gemini import GeminiClient
+from app.integrations.smtp import SMTPClient
+from app.integrations.whatsapp import WhatsAppClient
+from app.models.message import (
+    STATUS_FAILED,
+    STATUS_SENT,
+    STATUS_SKIPPED,
+    Message,
+)
 from app.schemas.message import MessageSend
-from app.services.clients.deepseek import DeepSeekClient
-from app.services.clients.elevenlabs import ElevenLabsClient
-from app.services.clients.gemini import GeminiClient
-from app.services.clients.whatsapp import WhatsAppClient
 from app.services.contact_service import get_contact_by_external_id
 from app.services.template_service import get_template
 from app.utils.logging import get_logger
@@ -47,23 +53,12 @@ _AUDIO_EXT = {".mp3", ".ogg", ".wav", ".opus", ".m4a"}
 
 
 def _detect_media(source: str) -> tuple[str, str | None]:
-    """Detecta o tipo de midia e o MIME type.
-
-    Args:
-        source: URL ou data URI (base64). Ex: "data:image/png;base64,iVBOR..."
-
-    Returns:
-        (media_type, mime_type) onde media_type e image/video/audio/document
-        e mime_type e o MIME detectado (ou None).
-    """
-    # data URI: data:image/png;base64,...
+    """Detecta o tipo de midia e o MIME type."""
     if source.startswith("data:"):
         m = re.match(r"data:([^;]+);", source)
         mime = m.group(1) if m else "application/octet-stream"
-        media_type = _MIME_MAP.get(mime, "document")
-        return media_type, mime
+        return _MIME_MAP.get(mime, "document"), mime
 
-    # URL — detecta por extensao
     path = urlparse(source).path.lower()
     ext = "." + path.rsplit(".", 1)[-1] if "." in path else ""
     if ext in _IMAGE_EXT:
@@ -76,18 +71,18 @@ def _detect_media(source: str) -> tuple[str, str | None]:
 
 
 def _public_url(relative_path: str) -> str:
-    """Converte path relativo (ex: 'audio/abc.mp3') em URL publica (email, etc)."""
     base = get_settings().public_base_url.rstrip("/")
-    return f"{base}/files/{relative_path}"
+    return f"{base}/media/{relative_path}"
 
 
 def _dmz_url(relative_path: str) -> str:
     """URL interna da DMZ para WhatsApp/Evolution (acesso local)."""
-    return f"http://10.10.10.144:80/files/{relative_path}"
+    base = get_settings().dmz_base_url.rstrip("/")
+    return f"{base}/media/{relative_path}"
 
 
-def _handle_base64_media(data_uri: str) -> tuple[str, str]:
-    """Decodifica data URI base64, salva em disco, retorna (url, media_type)."""
+def _handle_base64_media(data_uri: str) -> tuple[str, str, str]:
+    """Decodifica data URI base64, salva em disco, retorna (url_publica, url_dmz, media_type)."""
     import base64 as b64
     import uuid
 
@@ -98,7 +93,6 @@ def _handle_base64_media(data_uri: str) -> tuple[str, str]:
     raw = b64.b64decode(m.group(2))
 
     media_type = _MIME_MAP.get(mime, "document")
-    # Determina extensao
     ext_map = {
         "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
         "image/webp": ".webp", "image/gif": ".gif",
@@ -109,13 +103,14 @@ def _handle_base64_media(data_uri: str) -> tuple[str, str]:
     }
     ext = ext_map.get(mime, mimetypes.guess_extension(mime) or ".bin")
     filename = f"{uuid.uuid4().hex}{ext}"
-    out = Path("data/public/media")
+    out = Path("media/imagem")
     out.mkdir(parents=True, exist_ok=True)
     (out / filename).write_bytes(raw)
-    relative = f"media/{filename}"
-    url = _public_url(relative)
+    relative = f"imagem/{filename}"
+    public_url = _public_url(relative)
+    dmz_url = _dmz_url(relative)
     log.info("media.base64_decoded", mime=mime, relative=relative)
-    return url, media_type
+    return public_url, dmz_url, media_type
 
 
 def _email_media_html(media_url: str, media_type: str, caption: str) -> str:
@@ -140,7 +135,6 @@ def _email_media_html(media_url: str, media_type: str, caption: str) -> str:
             f'<p style="margin:0"><a href="{media_url}" style="color:#1a73e8">Clique para ouvir o audio</a></p>'
             f'<p style="color:#666;font-size:14px;margin:8px 0 0">{caption}</p></div>'
         )
-    # document / fallback
     name = media_url.rsplit("/", 1)[-1] if "/" in media_url else "arquivo"
     return (
         f'<div style="margin:16px 0;background:#f0f0f0;padding:16px;border-radius:4px;text-align:center">'
@@ -150,101 +144,96 @@ def _email_media_html(media_url: str, media_type: str, caption: str) -> str:
     )
 
 
-async def _extract_text(content: str) -> str:
-    """Se content e URL de .md, baixa e extrai. Senao retorna o texto direto."""
-    if content.startswith(("http://", "https://")) and content.endswith(".md"):
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(content, timeout=15.0)
-            resp.raise_for_status()
-            return resp.text
-    return content
-
-
 def _render_html(template: str, title: str, content: str) -> str:
-    """Insere titulo e conteudo no template HTML."""
     settings = get_settings()
+
+    # Escapa {{ e }} para nao quebrarem o template Jinja2
+    safe_title = title.replace("{{", "&#123;&#123;").replace("}}", "&#125;&#125;")
+    safe_content = content.replace("{{", "&#123;&#123;").replace("}}", "&#125;&#125;")
+
     return (
-        template.replace("{{title}}", title)
-        .replace("{{content}}", content.replace("\n", "<br>"))
+        template.replace("{{title}}", safe_title)
+        .replace("{{content}}", safe_content.replace("\n", "<br>"))
         .replace("{{service_name}}", settings.service_name)
     )
+
+
+async def list_messages(
+    contact_id: int | None = None, limit: int = 50, offset: int = 0
+) -> list[Message]:
+    qs = Message.all()
+    if contact_id is not None:
+        qs = qs.filter(contact_id=contact_id)
+    return await qs.offset(offset).limit(limit)
+
+
+async def get_message(message_id: int) -> Message | None:
+    return await Message.get_or_none(id=message_id)
 
 
 async def send_message(payload: MessageSend) -> Message:
     """Envia mensagem via WhatsApp + Email, com TTS opcional (apenas texto)."""
     settings = get_settings()
 
-    # 1. Resolve contacto
+    # Resolve contacto
     contact = await get_contact_by_external_id(payload.external_id)
 
-    # 2. Extrai texto
-    text = await _extract_text(payload.content)
+    # Cliente HTTP unico para toda a orquestracao
+    async with httpx.AsyncClient() as http:
+        # Extrai texto (URL .md ou direto)
+        text = payload.content
+        if text.startswith(("http://", "https://")) and text.endswith(".md"):
+            resp = await http.get(text, timeout=15.0)
+            resp.raise_for_status()
+            text = resp.text
 
-    # 3. Detecta midia
-    media_type = None
-    media_url = payload.media_url  # pode ser substituido se for base64
-    if payload.media_url:
-        if payload.media_url.startswith("data:"):
-            # Base64 — decodifica, salva, gera URL publica
-            media_url, media_type = _handle_base64_media(payload.media_url)
-        else:
-            media_type, _ = _detect_media(payload.media_url)
+        # Detecta midia
+        media_type = None
+        media_url = payload.media_url
+        whatsapp_media_url: str | None = None
+        if payload.media_url:
+            if payload.media_url.startswith("data:"):
+                media_url, whatsapp_media_url, media_type = _handle_base64_media(payload.media_url)
+            else:
+                media_type, _ = _detect_media(payload.media_url)
 
-    msg_type = "media" if media_type else "text"
+        msg_type = "media" if media_type else "text"
+        tts_enabled = payload.flags.tts and msg_type == "text"
 
-    # TTS so faz sentido sem midia
-    tts_enabled = payload.flags.tts and msg_type == "text"
-
-    # 3.5. Se --ai, gera texto via IA (substitui content original)
-    ai_used = False
-    if payload.flags.ai and msg_type == "text":
-        ai_used = True
-        # Precisamos do cliente DeepSeek aqui — cria um temporario
-        async with httpx.AsyncClient() as _ai_http:
-            _ai = DeepSeekClient(_ai_http)
+        # IA — gera texto (DeepSeek)
+        ai_used = False
+        if payload.flags.ai and msg_type == "text":
+            ai_used = True
             try:
-                text = await _ai.generate_message(
+                text = await DeepSeekClient(http).generate_message(
                     prompt=text,
                     extra_instruction=payload.instruction,
                     for_tts=tts_enabled,
                 )
                 log.info("ai.text_generated", length=len(text))
-                # Detecta placeholders nao resolvidos {{...}} no output da IA
                 if "{{" in text:
-                    log.error(
-                        "ai.unresolved_placeholder",
-                        text_preview=text[:200],
-                        hint="placeholder {{...}} detectado — "
-                             "resolucao de variaveis sera implementada em fase posterior",
-                    )
+                    log.warning("ai.unresolved_placeholder_cleaned", text_preview=text[:200])
+                    text = re.sub(r"\{\{.*?\}\}", "", text).strip()
             except Exception as exc:
                 log.error("ai.generation_failed", error=str(exc))
 
-    # 3.6. Se --img, gera imagem via Gemini
-    # content = texto/caption, instruction = prompt da imagem
-    # Se nao tem instruction, DeepSeek gera o prompt a partir do texto
-    img_used = False
-    if payload.flags.img:
-        img_used = True
-        async with httpx.AsyncClient() as _img_http:
-            # Resolve o prompt da imagem
+        # Imagem — gera via Gemini (com prompt opcional do DeepSeek)
+        img_used = False
+        if payload.flags.img:
+            img_used = True
             if payload.instruction:
                 image_prompt = payload.instruction
             else:
-                # Gera prompt de imagem via DeepSeek baseado no texto
-                _ds = DeepSeekClient(_img_http)
                 try:
-                    image_prompt = await _ds.generate_image_prompt(text)
+                    image_prompt = await DeepSeekClient(http).generate_image_prompt(text)
                     log.info("img.prompt_generated", prompt_preview=image_prompt[:80])
                 except Exception as exc:
                     log.error("img.prompt_failed", error=str(exc))
-                    image_prompt = text  # fallback: usa o proprio texto
+                    image_prompt = text
 
-            _gemini = GeminiClient(_img_http)
             try:
-                # Se tem media_url, usa como referencia p/ edicao/inspiracao
                 ref_url = media_url if media_type == "image" else None
-                relative = await _gemini.generate_image(
+                relative = await GeminiClient(http).generate_image(
                     prompt=image_prompt,
                     reference_image_url=ref_url,
                 )
@@ -252,59 +241,44 @@ async def send_message(payload: MessageSend) -> Message:
                 whatsapp_media_url = _dmz_url(relative)
                 media_type = "image"
                 msg_type = "media"
-                tts_enabled = False  # --img invalida --tts
+                tts_enabled = False
                 log.info("img.generated", relative=relative)
             except Exception as exc:
                 log.error("img.generation_failed", error=str(exc))
 
-    # 4. Cria registo de mensagem
-    message = await Message.create(
-        contact=contact, type=msg_type, content_text=text
-    )
+        # Cria registo de mensagem
+        message = await Message.create(
+            contact=contact, type=msg_type, content_text=text
+        )
 
-    # 5. Cliente HTTP compartilhado
-    async with httpx.AsyncClient() as http:
-        whatsapp = WhatsAppClient(http)
-        deepseek = DeepSeekClient(http)
-
-        # 6. Gera titulo via AI
+        # Gera titulo via AI
         try:
-            title = await deepseek.generate_title(text)
+            title = await DeepSeekClient(http).generate_title(text)
         except Exception:
             title = "Nova mensagem"
 
-        # 7. Prepara HTML do email (com midia se houver)
+        # Prepara HTML do email
         template = await get_template()
-        email_body = text
-        if media_type and media_url:
-            media_block = _email_media_html(media_url, media_type, text)
-            email_body = media_block
+        email_body = _email_media_html(media_url, media_type, text) if media_type and media_url else text
         html = _render_html(template, title, email_body)
 
-        # 8. Envia WhatsApp — texto + midia (com caption=texto)
-        # Para midia local (Gemini/TTS), usa URL interna da DMZ;
-        # para midia externa (user-provided URL), usa a URL original.
-        _wa_url = locals().get("whatsapp_media_url", media_url)
-        try:
-            if media_type and media_url:
-                await whatsapp.send_media(
-                    contact.phone,
-                    _wa_url,
-                    media_type,
-                    caption=text,
-                )
-            else:
-                await whatsapp.send_text(contact.phone, text)
-            message.whatsapp_status = "sent"
-        except Exception as exc:
-            log.error("whatsapp.send_failed", error=str(exc))
-            message.whatsapp_status = "failed"
+        # Envia WhatsApp (texto ou midia; TTS substitui o texto)
+        whatsapp = WhatsAppClient(http)
+        _wa_url = whatsapp_media_url or media_url
+        if not tts_enabled:
+            try:
+                if media_type and media_url:
+                    await whatsapp.send_media(contact.phone, _wa_url, media_type, caption=text)
+                else:
+                    await whatsapp.send_text(contact.phone, text)
+                message.whatsapp_status = STATUS_SENT
+            except Exception as exc:
+                log.error("whatsapp.send_failed", error=str(exc))
+                message.whatsapp_status = STATUS_FAILED
 
-        # 9. Envia Email
+        # Envia Email
         if contact.email:
             try:
-                from app.services.clients.smtp import SMTPClient
-
                 smtp = SMTPClient(http)
                 await smtp.configure_smtp(
                     smtp_host=settings.smtp_host,
@@ -318,29 +292,27 @@ async def send_message(payload: MessageSend) -> Message:
                     sender_name=settings.service_name,
                     html_content=html,
                 )
-                message.email_status = "sent"
+                message.email_status = STATUS_SENT
             except Exception as exc:
                 log.error("email.send_failed", error=str(exc))
-                message.email_status = "failed"
+                message.email_status = STATUS_FAILED
         else:
-            message.email_status = "skipped"
+            message.email_status = STATUS_SKIPPED
 
-        # 10. TTS — apenas para texto (sem midia)
+        # TTS — envia nota de voz nativa (substitui texto no WhatsApp)
         if tts_enabled:
             try:
                 tts = ElevenLabsClient()
                 relative_path = tts.generate_and_save(text)
-                audio_url = _public_url(relative_path)
-                message.tts_audio_url = audio_url
-                # WhatsApp usa URL interna da DMZ (Evolution esta na mesma rede)
-                await whatsapp.send_whatsapp_audio(
-                    contact.phone, _dmz_url(relative_path)
-                )
-                log.info("tts.sent", contact=payload.external_id, url=audio_url)
+                message.tts_audio_url = _public_url(relative_path)
+                await whatsapp.send_whatsapp_audio(contact.phone, _dmz_url(relative_path))
+                message.whatsapp_status = STATUS_SENT
+                log.info("tts.sent", contact=payload.external_id, url=message.tts_audio_url)
             except Exception as exc:
                 log.error("tts.failed", error=str(exc))
+                message.whatsapp_status = STATUS_FAILED
 
-    # 11. Atualiza mensagem e persiste
+    # Atualiza e persiste
     message.email_subject = title
     await message.save()
     log.info(

@@ -1,21 +1,14 @@
 """
-Servico de logs — registra acoes importantes no sistema.
+Servico de logs — listagem de registros do sistema.
 
 Logs sao vinculados a Message (opcionalmente) e documentam
 toda a logica de negocio: envios, enriquecimento, falhas.
 """
 
 from app.models.log import Log
-from app.schemas.log import LogCreate
 from app.utils.logging import get_logger
 
 log = get_logger(__name__)
-
-
-async def create_log(payload: LogCreate) -> Log:
-    record = await Log.create(**payload.model_dump())
-    log.info("log.created", action=payload.action, id=record.id)
-    return record
 
 
 async def list_logs(limit: int = 50, offset: int = 0) -> list[Log]:

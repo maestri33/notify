@@ -43,12 +43,12 @@ Quando o usuário pede "implementa CRUD de X":
 - Endpoints, services, integrações: tudo `async def`.
 - Sincronizar (`asyncio.to_thread`) só pra lib que não tem versão async.
 
-## Clientes de API externa (`app/services/clients/`)
+## Clientes de API externa (`app/integrations/`)
 
 Quando este serviço precisa consumir uma API externa:
 
 1. Adicionar URL e credenciais em `app/config.py` (Settings).
-2. Criar `app/services/clients/<nome>.py` com uma classe `XxxClient`.
+2. Criar `app/integrations/<nome>.py` com uma classe `XxxClient`.
 3. O `__init__` recebe `httpx.AsyncClient` (injeção, não cria internamente).
 4. Métodos `async def`, usando `request_with_retry` do `http_client.py`.
 5. Erros da API externa → `IntegrationError`.

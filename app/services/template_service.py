@@ -82,8 +82,9 @@ async def update_template(html: str) -> None:
 
 async def edit_template_with_ai(instruction: str) -> str:
     """Edita o template atual usando DeepSeek AI."""
-    from app.services.clients.deepseek import DeepSeekClient
     import httpx
+
+    from app.integrations.deepseek import DeepSeekClient
 
     current_html = await get_template()
     async with httpx.AsyncClient() as client:

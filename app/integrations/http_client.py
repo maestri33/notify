@@ -61,5 +61,4 @@ async def request_with_retry(
             if attempt == max_attempts:
                 raise IntegrationError(f"Falha ao chamar {url}: {exc}") from exc
             await asyncio.sleep(backoff_base * 2 ** (attempt - 1))
-    # nao deve cair aqui, mas pro mypy:
     raise IntegrationError(f"Falha ao chamar {url}: {last_exc}")

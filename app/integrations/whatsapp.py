@@ -1,7 +1,7 @@
 """
 Cliente para a API Evolution GO v2 (WhatsApp via whatsmeow).
 
-API alvo: 10.10.10.149 (configurado em Settings.whatsapp_api_base_url).
+API alvo: Settings.whatsapp_api_base_url.
 
 Endpoints implementados:
     - health()                — status global da API
@@ -40,7 +40,7 @@ MEDIA_TYPES = {"image", "video", "audio", "document"}
 
 
 class WhatsAppClient:
-    """Cliente de alto nivel para a API Evolution GO v2 (WhatsApp)."""
+    """Cliente de alto nivel para a API Evolution v2 (WhatsApp)."""
 
     def __init__(self, client: httpx.AsyncClient, *, instance: str | None = None) -> None:
         settings = get_settings()
@@ -734,3 +734,5 @@ class WhatsAppClient:
             type=status_type,
         )
         return result
+
+ 

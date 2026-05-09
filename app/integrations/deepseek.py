@@ -5,10 +5,13 @@ Usa JSON mode para respostas estruturadas.
 API: https://api.deepseek.com
 """
 
+import json
+
 import httpx
 
 from app.config import get_settings
 from app.exceptions import IntegrationError
+from app.integrations.http_client import request_with_retry
 from app.utils.logging import get_logger
 
 log = get_logger(__name__)
@@ -21,7 +24,9 @@ class DeepSeekClient:
         settings = get_settings()
         self._client = client
         self._api_key = settings.deepseek_api_key
-        self._base_url = "https://api.deepseek.com"
+        self._base_url = settings.deepseek_base_url
+        self._default_model = settings.deepseek_default_model
+        self._default_temperature = settings.deepseek_default_temperature
 
     # ------------------------------------------------------------------
     # Helpers
@@ -38,43 +43,42 @@ class DeepSeekClient:
         system_prompt: str,
         user_message: str,
         *,
-        model: str = "deepseek-v4-pro",
-        temperature: float = 0.3,
+        model: str | None = None,
+        temperature: float | None = None,
     ) -> dict:
         """Chama a API de chat e retorna o JSON parseado.
 
         Usa response_format json_object para garantir saida estruturada.
+        Se model/temperature nao forem informados, usa os defaults do .env.
         """
         payload = {
-            "model": model,
+            "model": model or self._default_model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            "temperature": temperature,
+            "temperature": temperature if temperature is not None else self._default_temperature,
             "response_format": {"type": "json_object"},
         }
-        resp = await self._client.post(
+        resp = await request_with_retry(
+            self._client,
+            "POST",
             f"{self._base_url}/chat/completions",
-            headers=self._headers(),
             json=payload,
+            headers=self._headers(),
             timeout=60.0,
         )
         if resp.status_code >= 400:
             raise IntegrationError(
                 f"DeepSeek API falhou ({resp.status_code}): {resp.text}"
             )
-        import json
 
         body = resp.json()
         raw = body["choices"][0]["message"]["content"]
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            # Loga o raw truncado para debug
-            from app.utils.logging import get_logger
-            _log = get_logger(__name__)
-            _log.error(
+            log.error(
                 "deepseek.json_parse_failed",
                 raw_preview=raw[:500],
                 raw_len=len(raw),
@@ -98,8 +102,7 @@ class DeepSeekClient:
                 "Tom natural, nao robotico."
             ),
             user_message=f"Gere um titulo para este conteudo:\n\n{content_text[:2000]}",
-            model="deepseek-v4-flash",  # tarefa simples — flash basta
-            temperature=0.3,
+            model="deepseek-v4-flash",
         )
         title = result.get("title", "Nova mensagem")
         log.info("deepseek.title_generated", title=title)
@@ -108,7 +111,7 @@ class DeepSeekClient:
     async def edit_html_template(self, current_html: str, instruction: str) -> str:
         """Edita um template HTML conforme instrucao do usuario.
 
-        Usa DeepSeek Flash para edicao.
+        Usa DeepSeek Pro pela complexidade da tarefa (HTML + CSS + Jinja2).
         """
         result = await self._chat(
             system_prompt=(
@@ -122,8 +125,6 @@ class DeepSeekClient:
                 f"Instrucao: {instruction}\n\n"
                 f"HTML atual:\n{current_html}"
             ),
-            model="deepseek-v4-flash",
-            temperature=0.3,
         )
         html = result.get("html", current_html)
         log.info("deepseek.template_edited", instruction_preview=instruction[:80])
@@ -172,7 +173,6 @@ class DeepSeekClient:
             user_message=(
                 f"Prompt: {prompt}\n{instruction_line}"
             ),
-            model="deepseek-v4-pro",
             temperature=0.7,
         )
         message = result.get("message", prompt)
@@ -209,7 +209,6 @@ class DeepSeekClient:
                 f"{context_text[:2000]}\n\n"
                 f"Gere um prompt de geracao de imagem para este contexto."
             ),
-            model="deepseek-v4-pro",
             temperature=0.7,
         )
         prompt = result.get("prompt", context_text)
